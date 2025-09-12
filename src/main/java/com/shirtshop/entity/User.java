@@ -32,9 +32,11 @@ public class User {
 
     private String phone;
     private String profileImageUrl; // Cloudinary URL
-
+    private String profileImagePublicId;
     @Builder.Default
     private Set<String> roles = Set.of("USER");
+    private String authProvider; // "LOCAL", "GOOGLE", "FACEBOOK"
+    private String providerId;   // sub/id จาก provider
 
     @CreatedDate
     private Instant createdAt;
@@ -43,4 +45,9 @@ public class User {
     private Instant updatedAt;
 
     private boolean emailVerified; // เผื่ออนาคตทำ verify
+
+    public String getRole() {
+        return roles.iterator().next();
+    }
+
 }

@@ -18,21 +18,5 @@ import java.util.Map;
 public class UserController {
 
     private final UserService userService;
-    private final AuthService authService; // ถ้ามี login/refresh
 
-    @PostMapping("/register")
-    public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
-        UserResponse created = userService.register(request);
-        return ResponseEntity.created(URI.create("/api/users/" + created.getId())).body(created);
-    }
-
-    @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-        return ResponseEntity.ok(authService.login(request));
-    }
-
-    @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refresh(@RequestBody Map<String, String> body) {
-        return ResponseEntity.ok(authService.refresh(body.get("refreshToken")));
-    }
 }

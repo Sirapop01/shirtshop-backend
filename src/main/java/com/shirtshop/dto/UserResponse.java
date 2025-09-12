@@ -2,6 +2,8 @@ package com.shirtshop.dto;
 
 import lombok.*;
 
+import java.util.Set;
+
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
 @Builder
@@ -15,4 +17,5 @@ public class UserResponse {
     private String phone;
     private String profileImageUrl;
     private boolean emailVerified;
+    private Set<String> roles;
 }
