@@ -32,7 +32,7 @@ public class AuthService {
             throw new ApiException("INVALID_CREDENTIALS", "Email or password is incorrect.");
         }
 
-        String accessToken  = jwtService.generateAccessToken(user);
+        String accessToken  = jwtService.generateToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
 
         return AuthResponse.builder()
@@ -55,7 +55,7 @@ public class AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ApiException("USER_NOT_FOUND", "User not found"));
 
-        String newAccess = jwtService.generateAccessToken(user);
+        String newAccess = jwtService.generateToken(user);
 
         return AuthResponse.builder()
                 .accessToken(newAccess)

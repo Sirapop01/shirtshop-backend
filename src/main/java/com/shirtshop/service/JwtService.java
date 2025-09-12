@@ -32,16 +32,38 @@ public class JwtService {
         return Keys.hmacShaKeyFor(bytes);
     }
 
-    public String generateAccessToken(User user) {
-        long now = System.currentTimeMillis();
+    public String generateToken(User user) {
+        Date now = new Date();
+        Date exp = new Date(now.getTime() + accessExpirationMs);
         return Jwts.builder()
+                // 👇 FIX: Use the user's unique ID as the subject, not the email.
                 .setSubject(user.getId())
                 .claim("email", user.getEmail())
                 .claim("displayName", user.getDisplayName())
-                .setIssuedAt(new Date(now))
-                .setExpiration(new Date(now + accessExpirationMs))
-                .signWith(keyFrom(accessSecret), SignatureAlgorithm.HS256)
+                .claim("roles", user.getRoles())
+                .setIssuedAt(now)
+                .setExpiration(exp)
+                .signWith(SignatureAlgorithm.HS256, accessSecret.getBytes())
                 .compact();
+    }
+
+    // ตรวจสอบ token
+    public boolean validateToken(String token) {
+        try {
+            Jwts.parser().setSigningKey(accessSecret.getBytes()).parseClaimsJws(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    // ดึง subject (userId)
+    public String extractUserId(String token) {
+        Claims claims = Jwts.parser()
+                .setSigningKey(accessSecret.getBytes())
+                .parseClaimsJws(token)
+                .getBody();
+        return claims.getSubject();
     }
 
     public String generateRefreshToken(User user) {
