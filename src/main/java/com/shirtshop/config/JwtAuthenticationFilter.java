@@ -11,9 +11,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 
 import java.io.IOException;
 import java.util.List;
@@ -22,41 +22,55 @@ import java.util.List;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtService jwtService;
-    private final UserService userService; // <-- ใช้ UserService แทน UserDetailsService
+    private final JwtService jwtService;      // มี validateToken() / extractUserId()
+    private final UserService userService;    // ต้องมี findByIdOrThrow(String id)
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain)
-            throws ServletException, IOException {
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+    ) throws ServletException, IOException {
 
-        String authHeader = request.getHeader("Authorization");
+        // ไม่มี header หรือไม่ใช่ Bearer -> ปล่อยผ่าน (ให้ SecurityConfig จัดการ permitAll ได้)
+        final String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String token = authHeader.substring(7);
-        if (!jwtService.validateToken(token)) {
+        final String token = authHeader.substring(7);
+
+        // ตรวจ token แบบเบา ๆ ถ้าไม่ valid ก็ปล่อยผ่าน (ห้าม 403 ตรงนี้)
+        if (!jwtService.validateToken(token)) {   // <-- ใช้ validateToken(String)
             filterChain.doFilter(request, response);
             return;
         }
 
-        // ใน JwtService ผมแนะนำให้ subject = userId (ตามที่เราใช้ก่อนหน้า)
-        String userId = jwtService.extractUserId(token);
+        String userId;
+        try {
+            userId = jwtService.extractUserId(token); // <-- ใช้ extractUserId(String)
+        } catch (Exception e) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
-        // โหลด user จาก DB (คุณควรมีเมธอดนี้ใน UserService)
-        User user = userService.findByIdOrThrow(userId);
+        // ถ้ายังไม่มี auth ใน context ค่อยตั้งให้
+        if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            // โหลดผู้ใช้จาก DB ตาม "id" (ไม่ใช่ username)
+            User user = userService.findByIdOrThrow(userId);
 
-        var authorities = user.getRoles().stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
-                .toList();
+            // รองรับหลาย role
+            List<SimpleGrantedAuthority> authorities = user.getRoles().stream()
+                    .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()))
+                    .toList();
 
-        var authentication = new UsernamePasswordAuthenticationToken(user, null, authorities);
-        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+            UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(user, null, authorities);
+            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-        SecurityContextHolder.getContext().setAuthentication(authentication);
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+        }
 
         filterChain.doFilter(request, response);
     }

@@ -56,4 +56,17 @@ public class ProductController {
         productService.deleteProduct(id);
         return ResponseEntity.noContent().build(); // คืนค่า 204 No Content
     }
+
+    @PutMapping(value = "/{id}", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ProductResponse> updateProduct(
+            @PathVariable String id,
+            @RequestPart("product") ProductRequest productRequest,
+            @RequestPart(value = "images", required = false) List<MultipartFile> newImages,
+            @RequestPart(value = "removeImagePublicIds", required = false) List<String> removeImagePublicIds
+    ) {
+        ProductResponse updated = productService.updateProduct(id, productRequest, newImages, removeImagePublicIds);
+        return ResponseEntity.ok(updated);
+    }
+
 }

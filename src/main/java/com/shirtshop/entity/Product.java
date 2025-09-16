@@ -20,6 +20,7 @@ public class Product {
     private List<String> availableColors;
     private List<String> availableSizes;
     private int stockQuantity;
+    private List<VariantStock> variantStocks;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
