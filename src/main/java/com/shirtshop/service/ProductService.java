@@ -120,12 +120,8 @@ public class ProductService {
         r.setStockQuantity(product.getStockQuantity());
         r.setCreatedAt(product.getCreatedAt());
 
-        // เดิม
+        // จัดการเรื่องรูปภาพ
         r.setImageUrls(product.getImageUrls() != null ? product.getImageUrls() : Collections.emptyList());
-        r.setAvailableColors(product.getAvailableColors() != null ? product.getAvailableColors() : Collections.emptyList());
-        r.setAvailableSizes(product.getAvailableSizes() != null ? product.getAvailableSizes() : Collections.emptyList());
-
-        // ใหม่: images เป็นคู่ (publicId,url)
         if (product.getImagePublicIds() != null && product.getImageUrls() != null) {
             List<ImageInfo> imgs = new ArrayList<>();
             for (int i = 0; i < Math.min(product.getImagePublicIds().size(), product.getImageUrls().size()); i++) {
@@ -136,7 +132,10 @@ public class ProductService {
             r.setImages(Collections.emptyList());
         }
 
-        // ใหม่: variantStocks
+        r.setAvailableColors(product.getAvailableColors() != null ? product.getAvailableColors() : Collections.emptyList());
+        r.setAvailableSizes(product.getAvailableSizes() != null ? product.getAvailableSizes() : Collections.emptyList());
+
+        // จัดการเรื่อง Variant Stocks
         if (product.getVariantStocks() != null) {
             List<VariantStockResponse> vs = product.getVariantStocks().stream().map(v -> {
                 VariantStockResponse o = new VariantStockResponse();
