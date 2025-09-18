@@ -2,6 +2,7 @@ package com.shirtshop.service;
 
 import com.shirtshop.dto.AuthResponse;
 import com.shirtshop.dto.LoginRequest;
+import com.shirtshop.dto.RegisterRequest;
 import com.shirtshop.entity.User;
 import com.shirtshop.exception.ApiException;
 import com.shirtshop.repository.UserRepository;
@@ -43,6 +44,37 @@ public class AuthService {
                 .user(userService.toResponse(user))
                 .build();
     }
+
+    public AuthResponse register(RegisterRequest request, String avatarUrl) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new ApiException("EMAIL_EXISTS", "Email is already registered.");
+        }
+
+        User user = User.builder()
+                .email(request.getEmail())
+                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .firstName(request.getFirstName())
+                .lastName(request.getLastName())
+                .displayName(request.getDisplayName())
+                .phone(request.getPhone())
+                .profileImageUrl(avatarUrl) // ✅ เซ็ตรูป
+                .emailVerified(false)
+                .build();
+
+        userRepository.save(user);
+
+        String accessToken = jwtService.generateToken(user);
+        String refreshToken = jwtService.generateRefreshToken(user);
+
+        return AuthResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .tokenType("Bearer")
+                .expiresIn(accessExpirationMs / 1000L)
+                .user(userService.toResponse(user)) // หรือใช้ mapper -> UserResponse ถ้ามี
+                .build();
+    }
+
 
     public AuthResponse refresh(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {

@@ -4,18 +4,15 @@ import com.shirtshop.dto.*;
 import com.shirtshop.entity.User;
 import com.shirtshop.service.AuthService;
 import com.shirtshop.service.UserService;
+import com.shirtshop.service.CloudinaryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.net.URI;
 import java.util.Map;
 
 @RestController
@@ -26,16 +23,24 @@ public class AuthController {
 
     private final UserService userService;
     private final AuthService authService;
-
+    private final CloudinaryService cloudinaryService;
     // --- เมธอดจาก UserController เดิม ---
-    @PostMapping(value = "/register", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
-    public ResponseEntity<UserResponse> register(
-            @Valid @RequestPart("user") RegisterRequest request,
-            @RequestPart(value = "profileImage", required = false) MultipartFile profileImage) {
+    @PostMapping("/register")
+    public ResponseEntity<AuthResponse> register(
+            @RequestPart("request") RegisterRequest request,
+            @RequestPart(value = "avatar", required = false) MultipartFile avatar) {
 
-        UserResponse created = userService.register(request, profileImage);
-        return ResponseEntity.created(URI.create("/api/users/" + created.getId())).body(created);
+        String avatarUrl = null;
+        if (avatar != null && !avatar.isEmpty()) {
+            // ✅ ดึง url ออกมาก่อน (แก้ incompatible types)
+            CloudinaryUploadResponse uploaded = cloudinaryService.uploadFile(avatar, "shirtshop/avatars");
+            avatarUrl = uploaded.getUrl();
+        }
+
+        return ResponseEntity.ok(authService.register(request, avatarUrl));
     }
+
+
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
@@ -47,28 +52,31 @@ public class AuthController {
         return ResponseEntity.ok(authService.refresh(body.get("refreshToken")));
     }
 
-    // --- เมธอด /me ที่ปรับปรุงให้ดีขึ้น ---
-    /**
-     * Endpoint สำหรับดึงข้อมูลของผู้ใช้ที่กำลังล็อกอินอยู่ (Profile)
-     */
-    // AuthController.java
-    @GetMapping("/api/auth/me")
-    public ResponseEntity<?> getCurrentUser() {
+    @GetMapping("/me")
+    public ResponseEntity<UserResponse> getCurrentUser() { // เปลี่ยน Response Type เป็น UserResponse
         var authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()
-                || "anonymousUser".equals(authentication.getPrincipal())) {
-            // ยังไม่ล็อกอิน -> 401
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("authenticated", false));
-        }
 
-        var user = (com.shirtshop.entity.User) authentication.getPrincipal();
-        return ResponseEntity.ok(Map.of(
-                "id", user.getId(),
-                "email", user.getEmail(),
-                "displayName", user.getDisplayName(),
-                "roles", user.getRoles()
-        ));
+        // ดึง User entity ที่ผ่านการ authenticate แล้วออกมา
+        var userPrincipal = (com.shirtshop.entity.User) authentication.getPrincipal();
+
+        // ⭐️ ใช้ toResponse เพื่อแปลงเป็น DTO ที่สมบูรณ์
+        UserResponse response = userService.toResponse(userPrincipal);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/me") // ใช้ PUT สำหรับการอัปเดต
+    public ResponseEntity<UserResponse> updateUserProfile(
+            @RequestBody UpdateUserRequest request) { // สร้าง DTO ใหม่สำหรับรับข้อมูล
+
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        var userPrincipal = (com.shirtshop.entity.User) authentication.getPrincipal();
+        String userId = userPrincipal.getId();
+
+        // เรียก Service มาอัปเดตข้อมูล
+        User updatedUser = userService.updateUserProfile(userId, request);
+
+        return ResponseEntity.ok(userService.toResponse(updatedUser));
     }
 
 }

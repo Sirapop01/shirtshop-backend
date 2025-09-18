@@ -14,6 +14,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.multipart.MultipartFile;
 import com.shirtshop.dto.CloudinaryUploadResponse;
+import com.shirtshop.dto.UpdateUserRequest; // 👈 เพิ่ม import นี้
+import org.springframework.util.StringUtils; // 👈 ตรวจสอบว่ามี import นี้
 
 import java.util.Optional;
 
@@ -105,6 +107,32 @@ public class UserService {
                 .emailVerified(u.isEmailVerified())
                 .roles(u.getRoles())
                 .build();
+    }
+
+    public User updateUserProfile(String userId, UpdateUserRequest request) {
+        // 1. ค้นหา User จาก ID, ถ้าไม่เจอจะโยน Exception
+        User user = findByIdOrThrow(userId);
+
+        // 2. อัปเดตค่า field ต่างๆ หากมีการส่งค่าใหม่มา
+        if (StringUtils.hasText(request.getFirstName())) {
+            user.setFirstName(request.getFirstName());
+        }
+        if (StringUtils.hasText(request.getLastName())) {
+            user.setLastName(request.getLastName());
+        }
+        if (StringUtils.hasText(request.getPhone())) {
+            user.setPhone(request.getPhone());
+        }
+
+        // 3. อัปเดต displayName ใหม่อัตโนมัติ ถ้ามีการเปลี่ยนชื่อ
+        // ใช้ Logic เดียวกับตอนสมัครสมาชิก
+        if (StringUtils.hasText(request.getFirstName()) || StringUtils.hasText(request.getLastName())) {
+            String newDisplayName = String.format("%s %s", user.getFirstName(), user.getLastName()).trim();
+            user.setDisplayName(newDisplayName);
+        }
+
+        // 4. บันทึกการเปลี่ยนแปลงลง Database
+        return userRepository.save(user);
     }
 
     public Optional<User> getById(String id) {
