@@ -17,7 +17,7 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/auth") // ใช้ Path นี้เป็นหลัก
+@RequestMapping("/api/auth")
 @CrossOrigin
 public class AuthController {
 
