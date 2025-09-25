@@ -1,16 +1,35 @@
-// src/main/java/com/shirtshop/dto/address/AddressRequest.java
 package com.shirtshop.dto.address;
-import lombok.*;
 
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
 public class AddressRequest {
-    private String id;            // null = create, not null = update
+    @NotBlank
     private String fullName;
+
+    @Pattern(regexp = "^0\\d{8,9}$", message = "เบอร์โทรไม่ถูกต้อง")
     private String phone;
+
+    @NotBlank
     private String addressLine1;
+
+    @NotBlank
     private String subdistrict;
-    private String district;
-    private String province;
+
+    @NotBlank
+    private String district; // amphure_id
+
+    @NotBlank
+    private String province; // province_id
+
+    @Pattern(regexp = "^\\d{5}$", message = "รหัสไปรษณีย์ไม่ถูกต้อง")
     private String postalCode;
-    private Boolean isDefault;    // optional
+
+    @JsonProperty("isDefault")
+    private boolean isDefault;
 }
