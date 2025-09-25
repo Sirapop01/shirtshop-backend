@@ -38,14 +38,11 @@ public class ProductService {
                 .collect(Collectors.toList());
     }
 
-    public ProductResponse getProductById(String id) {
-        // ใช้ findById จาก Repository ซึ่งจะคืนค่าเป็น Optional<Product>
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
-
-        // ถ้าเจอ product ให้แปลงเป็น DTO แล้วส่งกลับไป
-        return mapToProductResponse(product);
+    public Product getById(String id) {
+        return productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
     }
+
 
     public void deleteProduct(String productId) {
         // 1. ค้นหาสินค้า

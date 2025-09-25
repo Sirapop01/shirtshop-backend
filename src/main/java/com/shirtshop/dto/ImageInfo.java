@@ -1,10 +1,11 @@
-// ใหม่: ImageInfo.java
 package com.shirtshop.dto;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+
+import lombok.*;
 
 @Data
+@NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class ImageInfo {
     private String publicId;
     private String url;

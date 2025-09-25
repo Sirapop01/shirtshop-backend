@@ -1,9 +1,9 @@
 package com.shirtshop.mapper;
 
-import com.shirtshop.dto.ProductResponse;
-import com.shirtshop.dto.VariantStockResponse;
+import com.shirtshop.dto.*;
 import com.shirtshop.entity.Product;
 import com.shirtshop.entity.VariantStock;
+import com.shirtshop.dto.ImageInfo;
 
 import java.util.stream.Collectors;
 
@@ -14,23 +14,33 @@ public class ProductMapper {
                 .id(p.getId())
                 .name(p.getName())
                 .description(p.getDescription())
+                .price(p.getPrice()) // BigDecimal → BigDecimal ตรงกัน
                 .category(p.getCategory())
-                .price(p.getPrice())
                 .imageUrls(p.getImageUrls())
-                .variantStocks(
-                        p.getVariantStocks()
-                                .stream()
+                .availableColors(p.getAvailableColors())
+                .availableSizes(p.getAvailableSizes())
+                .stockQuantity(p.getStockQuantity())
+                .createdAt(p.getCreatedAt()) // LocalDateTime → LocalDateTime
+                .variantStocks(p.getVariantStocks() == null ? null :
+                        p.getVariantStocks().stream()
                                 .map(ProductMapper::toVariant)
                                 .collect(Collectors.toList())
                 )
                 .build();
     }
 
-    public static VariantStockResponse toVariant(VariantStock v) {
+    private static VariantStockResponse toVariant(VariantStock v) {
         return VariantStockResponse.builder()
-                .color(v.getColor() != null ? v.getColor().trim() : "")
-                .size(v.getSize() != null ? v.getSize().trim() : "")
-                .quantity(v.getQuantity() != null ? v.getQuantity() : 0)
+                .color(v.getColor())
+                .size(v.getSize())
+                .quantity(v.getQuantity())
+                .build();
+    }
+
+    private static ImageInfo toImageInfo(ImageInfo img) {
+        return ImageInfo.builder()
+                .publicId(img.getPublicId())
+                .url(img.getUrl())
                 .build();
     }
 }

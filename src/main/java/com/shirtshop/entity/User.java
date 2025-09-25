@@ -8,6 +8,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.annotation.Id;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 @Document(collection = "users")
@@ -34,6 +36,8 @@ public class User {
     private String profileImageUrl; // Cloudinary URL
     private String profileImagePublicId;
     @Builder.Default
+    private List<Address> addresses = new ArrayList<>();
+    @Builder.Default
     private Set<String> roles = Set.of("USER");
     private String authProvider; // "LOCAL", "GOOGLE", "FACEBOOK"
     private String providerId;   // sub/id จาก provider
@@ -46,8 +50,5 @@ public class User {
 
     private boolean emailVerified; // เผื่ออนาคตทำ verify
 
-    public String getRole() {
-        return roles.iterator().next();
-    }
 
 }
