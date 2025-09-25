@@ -35,7 +35,7 @@ public class SecurityConfig {
                         // ---------- Public ----------
                         .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll()
                         .requestMatchers(HttpMethod.GET,  "/api/products/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/media/upload").permitAll() // ✅ อนุญาตอัปโหลดตอน Register
+                        .requestMatchers(HttpMethod.POST, "/api/media/upload").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/", "/error", "/favicon.ico").permitAll()
 
@@ -44,12 +44,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT,    "/api/products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasRole("ADMIN")
 
-                        // ---------- Protected (ต้องล็อกอิน) ----------
+                        // ---------- User protected ----------
                         .requestMatchers("/api/auth/me").authenticated()
-
+                        .requestMatchers("/api/cart/**").authenticated()     // ✅ เพิ่มตรงนี้
+                        .requestMatchers("/api/orders/**").authenticated()   // ✅ เตรียมไว้สำหรับ order
+                        .requestMatchers("/api/addresses/**").authenticated()
                         // ---------- Others ----------
                         .anyRequest().authenticated()
                 );
+
 
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
