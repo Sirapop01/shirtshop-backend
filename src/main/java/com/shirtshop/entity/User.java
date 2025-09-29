@@ -48,7 +48,12 @@ public class User {
     @LastModifiedDate
     private Instant updatedAt;
 
-    private boolean emailVerified; // เผื่ออนาคตทำ verify
+    @Builder.Default
+    private boolean active = false;
 
+    @Indexed
+    private Instant lastActive;   // ✅ getter/setter จะถูก generate ให้เรียก getLastActive()
+
+    private boolean emailVerified; // เผื่ออนาคตทำ verify
 
 }
