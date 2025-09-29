@@ -1,6 +1,7 @@
 package com.shirtshop.service;
 
 import com.shirtshop.dto.CustomerItemResponse;
+import com.shirtshop.dto.UserResponse;
 import com.shirtshop.entity.User;
 import com.shirtshop.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +25,22 @@ public class CustomerAdminService {
                 .collect(Collectors.toList());
     }
 
-    /** Map User → CustomerItemResponse */
+    /** ดู Profile รายบุคคล */
+    public UserResponse getCustomerById(String id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Customer not found"));
+        return toUserResponse(user);
+    }
+
+    /** ลบลูกค้า */
+    public void deleteCustomerById(String id) {
+        if (!userRepository.existsById(id)) {
+            throw new IllegalArgumentException("Customer not found");
+        }
+        userRepository.deleteById(id);
+    }
+
+    /** Map User → CustomerItemResponse (สำหรับ list) */
     private CustomerItemResponse toCustomerItem(User u) {
         String name = u.getDisplayName();
         if (!StringUtils.hasText(name)) {
@@ -41,7 +57,25 @@ public class CustomerAdminService {
                 .name(name)
                 .email(u.getEmail())
                 .roles(u.getRoles())
-                .active(Boolean.TRUE.equals(u.isActive()))   // ✅ ใช้ isActive() แทน
+                .active(Boolean.TRUE.equals(u.isActive()))
+                .lastActive(u.getLastActive())
+                .build();
+    }
+
+    /** Map User → UserResponse (สำหรับ profile view) */
+    private UserResponse toUserResponse(User u) {
+        return UserResponse.builder()
+                .id(u.getId())
+                .email(u.getEmail())
+                .username(u.getUsername())
+                .firstName(u.getFirstName())
+                .lastName(u.getLastName())
+                .displayName(u.getDisplayName())
+                .phone(u.getPhone())
+                .profileImageUrl(u.getProfileImageUrl())
+                .emailVerified(u.isEmailVerified())
+                .roles(u.getRoles())
+                .active(u.isActive())
                 .lastActive(u.getLastActive())
                 .build();
     }

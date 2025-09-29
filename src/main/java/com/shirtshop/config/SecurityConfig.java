@@ -49,6 +49,7 @@ public class SecurityConfig {
                         // หน้า customers & dashboard สำหรับแอดมิน
                         .requestMatchers(HttpMethod.GET, "/api/customers/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/dashboard/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/customers/**").hasRole("ADMIN")
 
                         // ---------- User protected ----------
                         .requestMatchers("/api/auth/me").authenticated()
