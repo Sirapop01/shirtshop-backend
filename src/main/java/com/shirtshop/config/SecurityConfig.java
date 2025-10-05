@@ -41,6 +41,13 @@ public class SecurityConfig {
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
+                        // ---------- Public (Mock Hosted Payment pages) ----------
+                        .requestMatchers(
+                                "/mock-hosted-checkout",
+                                "/mock-hosted-pay",
+                                "/mock-hosted-cancel"
+                        ).permitAll()
+
                         // ---------- Admin only ----------
                         // จัดการสินค้า (เขียน/แก้/ลบ) ต้อง ADMIN เท่านั้น
                         .requestMatchers(HttpMethod.POST,   "/api/products").hasRole("ADMIN")
