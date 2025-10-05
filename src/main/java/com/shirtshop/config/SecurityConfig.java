@@ -20,10 +20,12 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor    
+@RequiredArgsConstructor
 public class SecurityConfig {
 
+    // ฟิลเตอร์ของคุณต้องเป็น @Component อยู่ในแพ็กเกจนี้แล้ว
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ActiveUserFilter activeUserFilter;
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -33,11 +35,11 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // ---------- Public ----------
-                        .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.GET,  "/api/products/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/media/upload").permitAll()
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll()   // login/register/refresh
+                        .requestMatchers(HttpMethod.GET,  "/api/products/**").permitAll() // ดูสินค้า public
                         .requestMatchers("/", "/error", "/favicon.ico").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         // ---------- Public (Mock Hosted Payment pages) ----------
                         .requestMatchers(
@@ -47,35 +49,43 @@ public class SecurityConfig {
                         ).permitAll()
 
                         // ---------- Admin only ----------
+                        // จัดการสินค้า (เขียน/แก้/ลบ) ต้อง ADMIN เท่านั้น
                         .requestMatchers(HttpMethod.POST,   "/api/products").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,    "/api/products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasRole("ADMIN")
+                        // หน้า customers & dashboard สำหรับแอดมิน
+                        .requestMatchers(HttpMethod.GET, "/api/customers/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/dashboard/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/customers/**").hasRole("ADMIN")
 
                         // ---------- User protected ----------
                         .requestMatchers("/api/auth/me").authenticated()
-                        .requestMatchers("/api/cart/**").authenticated()     // ✅ เพิ่มตรงนี้
-                        .requestMatchers("/api/orders/**").authenticated()   // ✅ เตรียมไว้สำหรับ order
-                        .requestMatchers("/api/addresses/**").authenticated()
+                        .requestMatchers("/api/users/me").authenticated()
+                        .requestMatchers("/api/cart/**").authenticated()
                         .requestMatchers("/api/orders/**").authenticated()
-                        .requestMatchers("/api/products/**").authenticated()
-                        .requestMatchers("/api/payments/**").authenticated()
+                        .requestMatchers("/api/addresses/**").authenticated()
+
                         // ---------- Others ----------
                         .anyRequest().authenticated()
+                );
 
-                )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        // ลำดับฟิลเตอร์
+        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterAfter(activeUserFilter, UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
 
-    // CORS ให้ FE localhost:3000 เรียกได้
+    // CORS: FE http://localhost:3000
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
         cfg.setAllowedOrigins(List.of("http://localhost:3000"));
-        cfg.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
-        cfg.setAllowedHeaders(List.of("*"));
+        cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        cfg.setAllowedHeaders(List.of("Authorization","Content-Type","Accept","Origin","X-Requested-With"));
         cfg.setAllowCredentials(true);
         cfg.setMaxAge(3600L);
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cfg);
         return source;

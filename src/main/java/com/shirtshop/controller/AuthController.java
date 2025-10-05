@@ -55,9 +55,39 @@ public class AuthController {
 
     // ✅ ดึงข้อมูลผู้ใช้จาก JWT (principal คือ User)
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal User user) {
-        UserResponse response = userService.toResponse(user);
-        return ResponseEntity.ok(response);
+    public ResponseEntity<UserResponse> getCurrentUser() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return ResponseEntity.status(401).build();
+        }
+
+        Object principal = auth.getPrincipal();
+        User u;
+
+        try {
+            if (principal instanceof com.shirtshop.entity.User) {
+                u = (com.shirtshop.entity.User) principal; // กรณี JwtAuthenticationFilter ตั้งเป็น User ให้แล้ว
+            } else if (principal instanceof org.springframework.security.core.userdetails.User springUser) {
+                // กรณีเป็น UserDetails ของ Spring → username มักเป็นอีเมล
+                u = userService.findByEmail(springUser.getUsername());
+            } else if (principal instanceof String s) {
+                // อาจเป็น "anonymousUser", userId หรือ email
+                if ("anonymousUser".equalsIgnoreCase(s)) {
+                    return ResponseEntity.status(401).build();
+                }
+                if (s.contains("@")) {
+                    u = userService.findByEmail(s);
+                } else {
+                    u = userService.findByIdOrThrow(s);
+                }
+            } else {
+                return ResponseEntity.status(401).build();
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(401).build();
+        }
+
+        return ResponseEntity.ok(userService.toResponse(u));
     }
 
     // ✅ อัปเดตข้อมูลโปรไฟล์ผู้ใช้
