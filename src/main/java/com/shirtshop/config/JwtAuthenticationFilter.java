@@ -1,4 +1,3 @@
-// src/main/java/com/shirtshop/config/JwtAuthenticationFilter.java
 package com.shirtshop.config;
 
 import com.shirtshop.entity.User;
@@ -31,43 +30,33 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-
         String authHeader = request.getHeader("Authorization");
+
+        // ถ้าไม่มี header ก็ให้ข้ามไป
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        final String token = authHeader.substring(7);
+        // ตัดคำว่า Bearer ออก
+        String token = authHeader.substring(7);
 
-        // token ไม่ valid → ปล่อยผ่าน (อย่าฟันธง 401/403 ตรงนี้)
+        // ตรวจสอบความถูกต้องของ token
         if (!jwtService.validateToken(token)) {
             filterChain.doFilter(request, response);
             return;
         }
 
         // ดึง userId จาก token
-        String userId;
-        try {
-            userId = jwtService.extractUserId(token);
-        } catch (Exception e) {
-            filterChain.doFilter(request, response);
-            return;
-        }
+        String userId = jwtService.extractUserId(token);
 
-        // ตั้ง Authentication ใน SecurityContext ถ้ายังไม่ได้ตั้ง
-        if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            User user = userService.findByIdOrThrow(userId);
+        // โหลดข้อมูล User จริงจากฐานข้อมูล
+        User user = userRepository.findById(userId).orElse(null);
 
-            List<SimpleGrantedAuthority> authorities = user.getRoles().stream()
-                    .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()))
-                    .toList();
-
-            // ใช้ userId เป็น principal (authentication.getName() จะคืน userId)
+        if (user != null) {
+            // ใส่ User object เป็น principal
             UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(user.getId(), null, authorities);
-
-            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    new UsernamePasswordAuthenticationToken(user, null, Collections.emptyList());
             SecurityContextHolder.getContext().setAuthentication(authentication);
         }
 
