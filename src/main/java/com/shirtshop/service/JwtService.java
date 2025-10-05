@@ -35,9 +35,9 @@ public class JwtService {
     public String generateToken(User user) {
         Date now = new Date();
         Date exp = new Date(now.getTime() + accessExpirationMs);
+
         return Jwts.builder()
-                // 👇 FIX: Use the user's unique ID as the subject, not the email.
-                .setSubject(user.getId())
+                .setSubject(user.getId()) // ใช้ userId เป็น subject
                 .claim("email", user.getEmail())
                 .claim("displayName", user.getDisplayName())
                 .claim("roles", user.getRoles())
@@ -47,7 +47,6 @@ public class JwtService {
                 .compact();
     }
 
-    // ตรวจสอบ token
     public boolean validateToken(String token) {
         try {
             Jwts.parser().setSigningKey(accessSecret.getBytes()).parseClaimsJws(token);
@@ -57,7 +56,6 @@ public class JwtService {
         }
     }
 
-    // ดึง subject (userId)
     public String extractUserId(String token) {
         Claims claims = Jwts.parser()
                 .setSigningKey(accessSecret.getBytes())
@@ -81,7 +79,6 @@ public class JwtService {
         return Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
     }
 
-    // เผื่ออยากเรียกแบบชัดเจน
     public Jws<Claims> parseAccess(String token)  { return parse(token, false); }
     public Jws<Claims> parseRefresh(String token) { return parse(token, true); }
 }

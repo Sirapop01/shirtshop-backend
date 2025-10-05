@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -52,31 +53,22 @@ public class AuthController {
         return ResponseEntity.ok(authService.refresh(body.get("refreshToken")));
     }
 
+    // ✅ ดึงข้อมูลผู้ใช้จาก JWT (principal คือ User)
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> getCurrentUser() { // เปลี่ยน Response Type เป็น UserResponse
-        var authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        // ดึง User entity ที่ผ่านการ authenticate แล้วออกมา
-        var userPrincipal = (com.shirtshop.entity.User) authentication.getPrincipal();
-
-        // ⭐️ ใช้ toResponse เพื่อแปลงเป็น DTO ที่สมบูรณ์
-        UserResponse response = userService.toResponse(userPrincipal);
-
+    public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal User user) {
+        UserResponse response = userService.toResponse(user);
         return ResponseEntity.ok(response);
     }
 
-    @PutMapping("/me") // ใช้ PUT สำหรับการอัปเดต
+    // ✅ อัปเดตข้อมูลโปรไฟล์ผู้ใช้
+    @PutMapping("/me")
     public ResponseEntity<UserResponse> updateUserProfile(
-            @RequestBody UpdateUserRequest request) { // สร้าง DTO ใหม่สำหรับรับข้อมูล
+            @AuthenticationPrincipal User user,
+            @RequestBody UpdateUserRequest request) {
 
-        var authentication = SecurityContextHolder.getContext().getAuthentication();
-        var userPrincipal = (com.shirtshop.entity.User) authentication.getPrincipal();
-        String userId = userPrincipal.getId();
-
-        // เรียก Service มาอัปเดตข้อมูล
-        User updatedUser = userService.updateUserProfile(userId, request);
-
+        User updatedUser = userService.updateUserProfile(user.getId(), request);
         return ResponseEntity.ok(userService.toResponse(updatedUser));
     }
+
 
 }
