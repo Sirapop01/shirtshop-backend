@@ -51,6 +51,4 @@ public class OrderController {
     ) {
         return ResponseEntity.ok(orderService.uploadSlip(id, file));
     }
-
-
 }
