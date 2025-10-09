@@ -1,5 +1,5 @@
 // src/main/java/com/shirtshop/dto/CartResponse.java
-package com.shirtshop.dto;
+package com.shirtshop.dto.cart;
 
 import java.util.List;
 import java.util.Map;

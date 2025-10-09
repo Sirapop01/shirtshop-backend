@@ -2,7 +2,7 @@
 package com.shirtshop.controller;
 
 import com.shirtshop.dto.cart.AddCartItemRequest;
-import com.shirtshop.dto.CartResponse;
+import com.shirtshop.dto.cart.CartResponse;
 import com.shirtshop.dto.cart.UpdateCartItemRequest;
 import com.shirtshop.entity.Cart;
 import com.shirtshop.service.CartService;
