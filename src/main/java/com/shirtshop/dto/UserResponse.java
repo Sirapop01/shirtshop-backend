@@ -3,6 +3,7 @@ package com.shirtshop.dto;
 import lombok.*;
 
 import java.util.Set;
+import java.time.Instant;
 
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
@@ -17,5 +18,7 @@ public class UserResponse {
     private String phone;
     private String profileImageUrl;
     private boolean emailVerified;
+    private boolean active;
+    private Instant lastActive;
     private Set<String> roles;
 }
