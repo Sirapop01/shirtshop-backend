@@ -1,65 +1,55 @@
 // src/main/java/com/shirtshop/controller/CartController.java
 package com.shirtshop.controller;
 
-import com.shirtshop.dto.cart.AddCartItemRequest;
-import com.shirtshop.dto.cart.CartResponse;
-import com.shirtshop.dto.cart.UpdateCartItemRequest;
-import com.shirtshop.entity.Cart;
+import com.shirtshop.dto.cart.*;
 import com.shirtshop.service.CartService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
-import java.util.stream.Collectors;
-
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/cart")
-@CrossOrigin
+@RequiredArgsConstructor
 public class CartController {
 
     private final CartService cartService;
 
-    @GetMapping
-    public ResponseEntity<CartResponse> getMyCart() {
-        Cart c = cartService.getMyCart();
-        var items = c.getItems().stream().map(it -> Map.<String,Object>of(
-                "productId", it.getProductId(),
-                "name", it.getName(),
-                "imageUrl", it.getImageUrl(),
-                "unitPrice", it.getUnitPrice(),
-                "color", it.getColor(),
-                "size", it.getSize(),
-                "quantity", it.getQuantity()
-        )).collect(Collectors.toList());
+    // NOTE: ในตัวอย่างนี้สมมติว่าคุณดึง userId มาจาก SecurityContext หรือ Header
+    private String resolveUserId() {
+        // TODO: เปลี่ยนเป็นดึงจาก JWT ของคุณ
+        return "demo-user-id";
+    }
 
-        return ResponseEntity.ok(new CartResponse(items, c.getSubTotal(), c.getShippingFee()));
+    @GetMapping
+    public ResponseEntity<CartResponse> getCart() {
+        return ResponseEntity.ok(cartService.getCart(resolveUserId()));
     }
 
     @PostMapping("/items")
-    public ResponseEntity<Void> addItem(@RequestBody AddCartItemRequest req) {
-        cartService.addItem(req);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<CartResponse> addItem(@RequestBody AddCartItemRequest req) {
+        return ResponseEntity.ok(cartService.addItem(resolveUserId(), req));
     }
 
     @PutMapping("/items")
-    public ResponseEntity<Void> updateItem(@RequestBody UpdateCartItemRequest req) {
-        cartService.updateItem(req);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<CartResponse> updateItem(@RequestBody UpdateCartItemRequest req) {
+        return ResponseEntity.ok(cartService.updateItem(resolveUserId(), req));
     }
 
     @DeleteMapping("/items")
-    public ResponseEntity<Void> removeItem(@RequestParam String productId,
-                                           @RequestParam String color,
-                                           @RequestParam String size) {
-        cartService.removeItem(productId, color, size);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<CartResponse> removeItem(
+            @RequestParam String productId,
+            @RequestParam String color,
+            @RequestParam String size) {
+        return ResponseEntity.ok(cartService.removeItem(resolveUserId(), productId, color, size));
     }
 
     @DeleteMapping
-    public ResponseEntity<Void> clearCart() {
-        cartService.clearMyCart();
-        return ResponseEntity.ok().build();
+    public ResponseEntity<CartResponse> clear() {
+        return ResponseEntity.ok(cartService.clear(resolveUserId()));
+    }
+
+    @PostMapping("/merge")
+    public ResponseEntity<CartResponse> merge(@RequestBody MergeCartRequest req) {
+        return ResponseEntity.ok(cartService.merge(resolveUserId(), req));
     }
 }

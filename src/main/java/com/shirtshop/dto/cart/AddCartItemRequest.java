@@ -1,9 +1,12 @@
-// src/main/java/com/shirtshop/dto/AddCartItemRequest.java
+// src/main/java/com/shirtshop/dto/cart/AddCartItemRequest.java
 package com.shirtshop.dto.cart;
 
-public record AddCartItemRequest(
-        String productId,
-        String color,
-        String size,
-        int quantity
-) {}
+import lombok.*;
+
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+public class AddCartItemRequest {
+    private String productId;
+    private String color;
+    private String size;
+    private int quantity;
+}

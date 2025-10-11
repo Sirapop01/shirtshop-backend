@@ -1,27 +1,29 @@
 package com.shirtshop.config;
 
 import com.shirtshop.entity.User;
-import com.shirtshop.repository.UserRepository;
 import com.shirtshop.service.JwtService;
+import com.shirtshop.service.UserService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtService jwtService;
-    private final UserRepository userRepository;
+    private final JwtService jwtService;      // มี validateToken() / extractUserId()
+    private final UserService userService;    // ต้องมี findByIdOrThrow(String id)
 
     @Override
     protected void doFilterInternal(
@@ -30,37 +32,46 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        String authHeader = request.getHeader("Authorization");
-
-        // ถ้าไม่มี header ก็ให้ข้ามไป
+        // ไม่มี header หรือไม่ใช่ Bearer -> ปล่อยผ่าน (ให้ SecurityConfig จัดการ permitAll ได้)
+        final String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // ตัดคำว่า Bearer ออก
-        String token = authHeader.substring(7);
+        final String token = authHeader.substring(7);
 
-        // ตรวจสอบความถูกต้องของ token
-        if (!jwtService.validateToken(token)) {
+        // ตรวจ token แบบเบา ๆ ถ้าไม่ valid ก็ปล่อยผ่าน (ห้าม 403 ตรงนี้)
+        if (!jwtService.validateToken(token)) {   // <-- ใช้ validateToken(String)
             filterChain.doFilter(request, response);
             return;
         }
 
-        // ดึง userId จาก token
-        String userId = jwtService.extractUserId(token);
+        String userId;
+        try {
+            userId = jwtService.extractUserId(token); // <-- ใช้ extractUserId(String)
+        } catch (Exception e) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
-        // โหลดข้อมูล User จริงจากฐานข้อมูล
-        User user = userRepository.findById(userId).orElse(null);
+        // ถ้ายังไม่มี auth ใน context ค่อยตั้งให้
+        if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            // โหลดผู้ใช้จาก DB ตาม "id" (ไม่ใช่ username)
+            User user = userService.findByIdOrThrow(userId);
 
-        if (user != null) {
-            // ใส่ User object เป็น principal
+            // รองรับหลาย role
+            List<SimpleGrantedAuthority> authorities = user.getRoles().stream()
+                    .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()))
+                    .toList();
+
             UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(user, null, Collections.emptyList());
+                    new UsernamePasswordAuthenticationToken(user, null, authorities);
+            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
             SecurityContextHolder.getContext().setAuthentication(authentication);
         }
 
-        // ให้ request ผ่านต่อ
         filterChain.doFilter(request, response);
     }
 }

@@ -1,9 +1,12 @@
-// src/main/java/com/shirtshop/dto/UpdateCartItemRequest.java
+// src/main/java/com/shirtshop/dto/cart/UpdateCartItemRequest.java
 package com.shirtshop.dto.cart;
 
-public record UpdateCartItemRequest(
-        String productId,
-        String color,
-        String size,
-        int quantity
-) {}
+import lombok.*;
+
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+public class UpdateCartItemRequest {
+    private String productId;
+    private String color;
+    private String size;
+    private int quantity; // ค่าใหม่
+}

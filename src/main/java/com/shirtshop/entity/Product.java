@@ -13,7 +13,7 @@ public class Product {
     @Id private String id;
     private String name;
     private String description;
-    private int price;
+    private BigDecimal price;
     private String category;
     private List<String> imageUrls;
     private List<String> imagePublicIds;

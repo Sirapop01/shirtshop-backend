@@ -43,5 +43,4 @@ public class CloudinaryService {
             throw new RuntimeException("Could not delete file from Cloudinary", e);
         }
     }
-
 }

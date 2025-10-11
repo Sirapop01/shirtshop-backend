@@ -9,7 +9,7 @@ import java.util.List;
 public class ProductRequest {
     private String name;
     private String description;
-    private int price;
+    private BigDecimal price;
     private String category;
     private List<String> availableColors;
     private List<String> availableSizes;

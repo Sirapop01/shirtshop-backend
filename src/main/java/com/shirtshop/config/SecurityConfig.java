@@ -39,13 +39,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/", "/error", "/favicon.ico").permitAll()
 
-                        // ---------- Public (Mock Hosted Payment pages) ----------
-                        .requestMatchers(
-                                "/mock-hosted-checkout",
-                                "/mock-hosted-pay",
-                                "/mock-hosted-cancel"
-                        ).permitAll()
-
                         // ---------- Admin only ----------
                         .requestMatchers(HttpMethod.POST,   "/api/products").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,    "/api/products/**").hasRole("ADMIN")
@@ -56,14 +49,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/cart/**").authenticated()     // ✅ เพิ่มตรงนี้
                         .requestMatchers("/api/orders/**").authenticated()   // ✅ เตรียมไว้สำหรับ order
                         .requestMatchers("/api/addresses/**").authenticated()
-                        .requestMatchers("/api/orders/**").authenticated()
-                        .requestMatchers("/api/products/**").authenticated()
-                        .requestMatchers("/api/payments/**").authenticated()
                         // ---------- Others ----------
                         .anyRequest().authenticated()
+                );
 
-                )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

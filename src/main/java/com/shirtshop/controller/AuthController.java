@@ -9,7 +9,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -18,7 +17,7 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/auth")
+@RequestMapping("/api/auth") // ใช้ Path นี้เป็นหลัก
 @CrossOrigin
 public class AuthController {
 
@@ -53,22 +52,31 @@ public class AuthController {
         return ResponseEntity.ok(authService.refresh(body.get("refreshToken")));
     }
 
-    // ✅ ดึงข้อมูลผู้ใช้จาก JWT (principal คือ User)
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal User user) {
-        UserResponse response = userService.toResponse(user);
+    public ResponseEntity<UserResponse> getCurrentUser() { // เปลี่ยน Response Type เป็น UserResponse
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        // ดึง User entity ที่ผ่านการ authenticate แล้วออกมา
+        var userPrincipal = (com.shirtshop.entity.User) authentication.getPrincipal();
+
+        // ⭐️ ใช้ toResponse เพื่อแปลงเป็น DTO ที่สมบูรณ์
+        UserResponse response = userService.toResponse(userPrincipal);
+
         return ResponseEntity.ok(response);
     }
 
-    // ✅ อัปเดตข้อมูลโปรไฟล์ผู้ใช้
-    @PutMapping("/me")
+    @PutMapping("/me") // ใช้ PUT สำหรับการอัปเดต
     public ResponseEntity<UserResponse> updateUserProfile(
-            @AuthenticationPrincipal User user,
-            @RequestBody UpdateUserRequest request) {
+            @RequestBody UpdateUserRequest request) { // สร้าง DTO ใหม่สำหรับรับข้อมูล
 
-        User updatedUser = userService.updateUserProfile(user.getId(), request);
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        var userPrincipal = (com.shirtshop.entity.User) authentication.getPrincipal();
+        String userId = userPrincipal.getId();
+
+        // เรียก Service มาอัปเดตข้อมูล
+        User updatedUser = userService.updateUserProfile(userId, request);
+
         return ResponseEntity.ok(userService.toResponse(updatedUser));
     }
-
 
 }

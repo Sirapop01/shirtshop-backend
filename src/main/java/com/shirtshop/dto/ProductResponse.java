@@ -12,7 +12,8 @@ public class ProductResponse {
     private String name;
     private String description;
 
-    private int price;
+    // ใช้ BigDecimal ให้ตรงกับ entity
+    private java.math.BigDecimal price;
 
     private String category;
     private List<String> imageUrls;

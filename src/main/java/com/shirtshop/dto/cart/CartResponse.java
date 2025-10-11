@@ -1,19 +1,12 @@
-// src/main/java/com/shirtshop/dto/CartResponse.java
+// src/main/java/com/shirtshop/dto/cart/CartResponse.java
 package com.shirtshop.dto.cart;
 
-import java.util.List;
-import java.util.Map;
+import lombok.*;
 
-/**
- * โครงสร้างที่ FE คาดหวัง:
- * {
- *   items: [{ productId, name, imageUrl, unitPrice, color, size, quantity }],
- *   subTotal: number,
- *   shippingFee: number
- * }
- */
-public record CartResponse(
-        List<Map<String, Object>> items,
-        int subTotal,
-        int shippingFee
-) {}
+import java.util.List;
+
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+public class CartResponse {
+    private List<CartItemResponse> items;
+    private double subTotal;
+}
