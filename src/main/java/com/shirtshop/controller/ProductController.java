@@ -2,6 +2,8 @@ package com.shirtshop.controller;
 
 import com.shirtshop.dto.ProductRequest;
 import com.shirtshop.dto.ProductResponse;
+import com.shirtshop.entity.Product;
+import com.shirtshop.mapper.ProductMapper;
 import com.shirtshop.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -46,9 +48,12 @@ public class ProductController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ProductResponse> getProductById(@PathVariable String id) {
-        ProductResponse product = productService.getProductById(id);
-        return ResponseEntity.ok(product);
+        Product product = productService.getById(id);   // 👈 ให้ service return Entity
+        ProductResponse response = ProductMapper.toResponse(product); // 👈 map เป็น DTO
+        return ResponseEntity.ok(response);
     }
+
+
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')") // ตัวอย่างการป้องกัน: ให้ลบได้เฉพาะ Admin

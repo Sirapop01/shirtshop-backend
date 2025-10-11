@@ -1,31 +1,32 @@
-// ProductResponse.java
 package com.shirtshop.dto;
 
-import lombok.Builder;
-import lombok.Data;
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import lombok.*;
 import java.util.List;
 
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class ProductResponse {
     private String id;
     private String name;
     private String description;
-    private BigDecimal price;
-    private String category;
 
-    // เดิม
+    // ใช้ BigDecimal ให้ตรงกับ entity
+    private java.math.BigDecimal price;
+
+    private String category;
     private List<String> imageUrls;
+
+    // ใช้ ImageInfo แยกเป็น class ของมันเอง (ไม่ซ้อนใน ProductResponse)
+    private List<ImageInfo> images;
+
     private List<String> availableColors;
     private List<String> availableSizes;
-    private int stockQuantity;
-    private LocalDateTime createdAt;
+    private Integer stockQuantity;
 
-    // ใหม่
-    private List<ImageInfo> images;           // [{publicId,url}]
+    // ใช้ LocalDateTime ให้ตรง entity
+    private java.time.LocalDateTime createdAt;
+
     private List<VariantStockResponse> variantStocks;
 }
-
-
