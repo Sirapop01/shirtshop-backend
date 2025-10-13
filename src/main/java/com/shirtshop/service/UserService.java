@@ -16,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.shirtshop.dto.CloudinaryUploadResponse;
 import com.shirtshop.dto.UpdateUserRequest; // 👈 เพิ่ม import นี้
 import org.springframework.util.StringUtils; // 👈 ตรวจสอบว่ามี import นี้
+import java.time.Instant;
 
 import java.util.Optional;
 
@@ -154,6 +155,50 @@ public class UserService {
     public User findByIdOrThrow(String id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ApiException("USER_NOT_FOUND", "User not found"));
+    }
+
+    public void markActiveById(String userId) {
+        userRepository.findById(userId).ifPresent(u -> {
+            u.setActive(true);                 // รองรับทั้ง boolean/Boolean
+            u.setLastActive(Instant.now());
+            userRepository.save(u);
+        });
+    }
+
+    // ใช้ตอน logout หรือ session หมดอายุ
+    public void markInactiveById(String userId) {
+        userRepository.findById(userId).ifPresent(u -> {
+            u.setActive(false);
+            u.setLastActive(Instant.now());
+            userRepository.save(u);
+        });
+    }
+
+    // เผื่อกรณีรู้ email แต่ไม่รู้ id
+    public void markActiveByEmail(String email) {
+        if (email == null) return;
+        userRepository.findByEmail(email.trim().toLowerCase()).ifPresent(u -> {
+            u.setActive(true);
+            u.setLastActive(Instant.now());
+            userRepository.save(u);
+        });
+    }
+
+    public void markInactiveByEmail(String email) {
+        if (email == null) return;
+        userRepository.findByEmail(email.trim().toLowerCase()).ifPresent(u -> {
+            u.setActive(false);
+            u.setLastActive(Instant.now());
+            userRepository.save(u);
+        });
+    }
+
+    // อัปเดต lastActive อย่างเดียว (ไม่เปลี่ยน active)
+    public void touchLastActive(String userId) {
+        userRepository.findById(userId).ifPresent(u -> {
+            u.setLastActive(Instant.now());
+            userRepository.save(u);
+        });
     }
 
 }
