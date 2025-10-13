@@ -19,6 +19,8 @@ public class Cart {
     @Builder.Default
     private List<CartItem> items = new ArrayList<>();
 
+    private Integer shippingFee;
+    private Integer subTotal;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
