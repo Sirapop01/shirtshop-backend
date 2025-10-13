@@ -1,21 +1,26 @@
-// src/main/java/com/shirtshop/entity/Address.java
 package com.shirtshop.entity;
 
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@Document(collection = "addresses")
 public class Address {
     @Id
     private String id;
 
-    private String fullName;       // ชื่อ-นามสกุลผู้รับ
-    private String phone;          // เบอร์
-    private String addressLine1;   // บ้านเลขที่/ซอย/ถนน
-    private String subdistrict;    // ตำบล/แขวง
-    private String district;       // อำเภอ/เขต
-    private String province;       // จังหวัด
-    private String postalCode;     // 5 หลัก
-
-    private boolean isDefault;     // true ได้แค่ 1 รายการต่อ user
+    private String userId;        // อ้างอิงผู้ใช้ที่ล็อกอิน
+    private String fullName;
+    private String phone;
+    private String addressLine1;
+    private String subdistrict;   // ชื่อตำบล/แขวง
+    private String district;      // amphure_id (string)
+    private String province;      // province_id (string)
+    private String postalCode;
+    private boolean isDefault;
 }
