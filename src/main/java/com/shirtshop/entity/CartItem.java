@@ -11,7 +11,8 @@ public class CartItem {
     private int quantity;
 
     // snapshot เบื้องต้นเพื่อโชว์ใน cart (อัปเดตใหม่ตอนเช็คเอาต์)
+    private String name;
     private String productName;
     private String imageUrl;
-    private double unitPrice; // ถ้าราคาในระบบเป็น BigDecimal ก็ใช้ BigDecimal ได้
+    private int unitPrice; // ถ้าราคาในระบบเป็น BigDecimal ก็ใช้ BigDecimal ได้
 }

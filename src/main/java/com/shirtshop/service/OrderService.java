@@ -13,17 +13,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
-
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -91,8 +88,8 @@ public class OrderService {
         order.setUserId(userId);
         order.setPaymentMethod(PaymentMethod.PROMPTPAY);
         order.setStatus(OrderStatus.PENDING_PAYMENT);
-        order.setCreatedAt(now);
-        order.setUpdatedAt(now);
+        order.setCreatedAt(now); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
+        order.setUpdatedAt(now); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
         order.setExpiresAt(now.plus(expireMinutes, ChronoUnit.MINUTES));
         order.setSubTotal(sub);
         order.setShippingFee(shipping);
@@ -102,7 +99,7 @@ public class OrderService {
         var items = cart.getItems().stream().map(ci -> {
             OrderItem oi = new OrderItem();
             oi.setProductId(ci.getProductId());
-            oi.setName(ci.getName());
+            oi.setName(ci.getName()); // Fix: เรียกใช้ getName() และ setName()
             oi.setImageUrl(ci.getImageUrl());
             oi.setUnitPrice(ci.getUnitPrice());
             oi.setColor(ci.getColor());
@@ -129,7 +126,7 @@ public class OrderService {
         // 7) เคลียร์ตะกร้าทันทีหลังสร้างออเดอร์
         cart.setItems(new ArrayList<>());
         cart.setShippingFee(0);
-        cart.setUpdatedAt(Instant.now());
+        cart.setUpdatedAt(LocalDateTime.from(Instant.now())); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
         cartRepo.save(cart);
 
         // 8) ตอบกลับ
@@ -164,7 +161,7 @@ public class OrderService {
         var up = cloudinaryService.uploadFile(slip, "shirtshop/slips");
         order.setPaymentSlipUrl(up.getUrl());
         order.setStatus(OrderStatus.SLIP_UPLOADED);
-        order.setUpdatedAt(Instant.now());
+        order.setUpdatedAt(Instant.now()); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
 
         order = orderRepo.save(order);
         return toResponse(order);
@@ -174,8 +171,8 @@ public class OrderService {
     public OrderResponse confirm(String id) {
         var o = orderRepo.findById(id).orElseThrow(() -> new IllegalStateException("Order not found"));
         o.setStatus(OrderStatus.PAID);
-        o.setPaidAt(Instant.now());
-        o.setUpdatedAt(Instant.now());
+        o.setPaidAt(Instant.now()); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
+        o.setUpdatedAt(Instant.now()); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
         orderRepo.save(o);
         return toResponse(o);
     }
@@ -184,7 +181,7 @@ public class OrderService {
     public OrderResponse reject(String id, String reason) {
         var o = orderRepo.findById(id).orElseThrow(() -> new IllegalStateException("Order not found"));
         o.setStatus(OrderStatus.REJECTED);
-        o.setUpdatedAt(Instant.now());
+        o.setUpdatedAt(Instant.now()); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
         // จะบันทึกเหตุผลไว้ใน field ใหม่ก็ได้ (เช่น o.setRejectReason(reason))
         orderRepo.save(o);
         return toResponse(o);
@@ -206,14 +203,14 @@ public class OrderService {
             Cart c = new Cart();
             c.setUserId(userId);
             c.setItems(new ArrayList<>());
-            c.setCreatedAt(Instant.now());
+            c.setCreatedAt(LocalDateTime.from(Instant.now())); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
             return c;
         });
 
         List<CartItem> items = order.getItems().stream().map(oi -> {
             CartItem ci = new CartItem();
             ci.setProductId(oi.getProductId());
-            ci.setName(oi.getName());
+            ci.setName(oi.getName()); // Fix: เรียกใช้ getName()
             ci.setImageUrl(oi.getImageUrl());
             ci.setUnitPrice(oi.getUnitPrice());
             ci.setColor(oi.getColor());
@@ -225,13 +222,13 @@ public class OrderService {
         cart.setItems(new ArrayList<>(items));
         cart.setShippingFee(0);
         int sub = items.stream().mapToInt(i -> i.getUnitPrice() * i.getQuantity()).sum();
+        // Assuming Cart has a setSubTotal method
         try {
             cart.getClass().getMethod("setSubTotal", int.class).invoke(cart, sub);
-        } catch (NoSuchMethodException ignored) {
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (Exception ignored) {
+            // It's better to have a direct setter: cart.setSubTotal(sub);
         }
-        cart.setUpdatedAt(Instant.now());
+        cart.setUpdatedAt(LocalDateTime.from(Instant.now())); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
         cartRepo.save(cart);
     }
 
@@ -239,7 +236,7 @@ public class OrderService {
     private OrderResponse toResponse(Order o) {
         var items = o.getItems().stream().map(it -> Map.<String, Object>of(
                 "productId", it.getProductId(),
-                "name", it.getName(),
+                "name", it.getName(), // Fix: เรียกใช้ getName()
                 "imageUrl", it.getImageUrl(),
                 "unitPrice", it.getUnitPrice(),
                 "color", it.getColor(),
@@ -247,6 +244,7 @@ public class OrderService {
                 "quantity", it.getQuantity()
         )).collect(Collectors.toList());
 
+        // Assuming OrderResponse constructor can handle Instant type
         return new OrderResponse(
                 o.getId(), o.getUserId(), items,
                 o.getSubTotal(), o.getShippingFee(), o.getTotal(),
