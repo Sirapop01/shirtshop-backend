@@ -10,23 +10,25 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDateTime;
+import java.time.Instant; // Fix: เปลี่ยนมาใช้ Instant
 import java.util.List;
+import java.util.ArrayList; // Fix: เพิ่ม import สำหรับ new ArrayList<>()
 
 @Service
 @RequiredArgsConstructor
 public class CartService {
 
     private final CartRepository cartRepository;
-    private final ProductService productService; // คุณมีอยู่แล้ว
+    private final ProductService productService;
 
     public Cart getOrCreate(String userId) {
         return cartRepository.findByUserId(userId)
                 .orElseGet(() -> {
                     Cart c = Cart.builder()
                             .userId(userId)
-                            .createdAt(LocalDateTime.now())
-                            .updatedAt(LocalDateTime.now())
+                            .items(new ArrayList<>()) // เพิ่มการ khởi tạo items
+                            .createdAt(Instant.now()) // Fix: ใช้ Instant
+                            .updatedAt(Instant.now()) // Fix: ใช้ Instant
                             .build();
                     return cartRepository.save(c);
                 });
@@ -61,7 +63,8 @@ public class CartService {
                         && equalsIgnoreCaseTrim(i.getSize(), req.getSize()))
                 .findFirst().orElse(null);
 
-        int unitPrice = (int) Math.round(p.getPrice().doubleValue()); // ถ้า price เป็น BigDecimal
+        // price อาจเป็น Integer, Double, หรือ BigDecimal ก็ได้, แปลงให้เป็น int
+        int unitPrice = (int) Math.round(p.getPrice().doubleValue());
         String imageUrl = (p.getImageUrls() != null && !p.getImageUrls().isEmpty()) ? p.getImageUrls().get(0) : "";
 
         if (exist == null) {
@@ -71,7 +74,7 @@ public class CartService {
                     .color(req.getColor().trim())
                     .size(req.getSize().trim())
                     .quantity(qty)
-                    .productName(p.getName())
+                    .productName(p.getName()) // ใช้ productName แทน name
                     .imageUrl(imageUrl)
                     .unitPrice(unitPrice)
                     .build());
@@ -79,12 +82,12 @@ public class CartService {
             int newQty = exist.getQuantity() + req.getQuantity();
             exist.setQuantity(Math.min(newQty, stock));
             // snapshot อัปเดตชื่อ/รูป/ราคาเผื่อสินค้ามีการแก้ไข
-            exist.setProductName(p.getName());
+            exist.setProductName(p.getName()); // ใช้ productName แทน name
             exist.setImageUrl(imageUrl);
             exist.setUnitPrice(unitPrice);
         }
 
-        cart.setUpdatedAt(LocalDateTime.now());
+        cart.setUpdatedAt(Instant.now()); // Fix: ใช้ Instant
         cartRepository.save(cart);
         return toResponse(cart);
     }
@@ -110,7 +113,7 @@ public class CartService {
                 .orElseThrow(() -> new IllegalArgumentException("Item not found in cart"));
 
         item.setQuantity(Math.min(req.getQuantity(), stock));
-        cart.setUpdatedAt(LocalDateTime.now());
+        cart.setUpdatedAt(Instant.now()); // Fix: ใช้ Instant
         cartRepository.save(cart);
         return toResponse(cart);
     }
@@ -120,7 +123,7 @@ public class CartService {
         cart.getItems().removeIf(i -> i.getProductId().equals(productId)
                 && equalsIgnoreCaseTrim(i.getColor(), color)
                 && equalsIgnoreCaseTrim(i.getSize(), size));
-        cart.setUpdatedAt(LocalDateTime.now());
+        cart.setUpdatedAt(Instant.now()); // Fix: ใช้ Instant
         cartRepository.save(cart);
         return toResponse(cart);
     }
@@ -128,7 +131,7 @@ public class CartService {
     public CartResponse clear(String userId) {
         Cart cart = getOrCreate(userId);
         cart.getItems().clear();
-        cart.setUpdatedAt(LocalDateTime.now());
+        cart.setUpdatedAt(Instant.now()); // Fix: ใช้ Instant
         cartRepository.save(cart);
         return toResponse(cart);
     }
@@ -156,10 +159,13 @@ public class CartService {
     }
 
     private CartResponse toResponse(Cart cart) {
+        if (cart.getItems() == null) { // ป้องกัน NullPointerException
+            cart.setItems(new ArrayList<>());
+        }
         List<CartItemResponse> items = cart.getItems().stream().map(i ->
                 CartItemResponse.builder()
                         .productId(i.getProductId())
-                        .name(i.getProductName())
+                        .name(i.getProductName()) // ใช้ productName
                         .imageUrl(i.getImageUrl())
                         .unitPrice(i.getUnitPrice())
                         .color(i.getColor())

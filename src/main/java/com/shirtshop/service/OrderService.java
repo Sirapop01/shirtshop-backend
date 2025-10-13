@@ -20,7 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,27 +35,26 @@ public class OrderService {
     private final CloudinaryService cloudinaryService;
     private final AddressRepository addressRepo;
 
-    @Value("${app.payment.promptpay.target}")           // เช่น "0952544014"
+    @Value("${app.payment.promptpay.target}")
     private String promptpayTarget;
 
-    @Value("${app.payment.promptpay.expire-minutes:15}") // อายุคำสั่งจ่าย (นาที)
+    @Value("${app.payment.promptpay.expire-minutes:15}")
     private int expireMinutes;
 
-    /** ดึง userId จาก SecurityContext (รองรับ principal = User หรือ String) */
     private String currentUserId() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         Object p = (auth != null ? auth.getPrincipal() : null);
         if (p instanceof User u) return u.getId();
         if (p instanceof String s) return s;
+        if (p instanceof org.springframework.security.core.userdetails.UserDetails ud) return ud.getUsername();
         throw new IllegalStateException("Unauthenticated");
     }
 
-    /** สร้างออเดอร์ชำระเงินด้วย PromptPay (EMV QR + fixed amount) และเคลียร์ตะกร้า */
     public CreateOrderResponse createPromptPayOrder(CreateOrderRequest req) {
         String userId = currentUserId();
 
-        // 1) กันผู้ใช้กดซ้ำ: ถ้ามีออเดอร์เปิดอยู่ (ยังไม่หมดอายุ) คืนออเดอร์เดิม
         var openSt = List.of(OrderStatus.PENDING_PAYMENT, OrderStatus.SLIP_UPLOADED);
+        // Fix: ส่ง Instant.now() เข้าไปใน query ให้ตรงกับ Repository
         var existing = orderRepo.findTopByUserIdAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
                 userId, openSt, Instant.now());
         if (existing.isPresent()) {
@@ -66,14 +64,12 @@ public class OrderService {
             );
         }
 
-        // 2) โหลดตะกร้า
         var cart = cartRepo.findByUserId(userId)
                 .orElseThrow(() -> new IllegalStateException("Cart not found"));
         if (cart.getItems() == null || cart.getItems().isEmpty()) {
             throw new IllegalStateException("Cart is empty");
         }
 
-        // 3) คำนวณยอด
         int sub = cart.getItems().stream()
                 .mapToInt(it -> it.getUnitPrice() * it.getQuantity())
                 .sum();
@@ -82,24 +78,22 @@ public class OrderService {
         int total = sub + shipping;
         if (total <= 0) throw new IllegalStateException("Invalid order total: " + total);
 
-        // 4) สร้างออเดอร์
-        var now = Instant.now();
+        Instant now = Instant.now();
         Order order = new Order();
         order.setUserId(userId);
         order.setPaymentMethod(PaymentMethod.PROMPTPAY);
         order.setStatus(OrderStatus.PENDING_PAYMENT);
-        order.setCreatedAt(now); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
-        order.setUpdatedAt(now); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
+        order.setCreatedAt(now);
+        order.setUpdatedAt(now);
         order.setExpiresAt(now.plus(expireMinutes, ChronoUnit.MINUTES));
         order.setSubTotal(sub);
         order.setShippingFee(shipping);
         order.setTotal(total);
 
-        // map CartItem -> OrderItem
         var items = cart.getItems().stream().map(ci -> {
             OrderItem oi = new OrderItem();
             oi.setProductId(ci.getProductId());
-            oi.setName(ci.getName()); // Fix: เรียกใช้ getName() และ setName()
+            oi.setName(ci.getName());
             oi.setImageUrl(ci.getImageUrl());
             oi.setUnitPrice(ci.getUnitPrice());
             oi.setColor(ci.getColor());
@@ -109,27 +103,22 @@ public class OrderService {
         }).collect(Collectors.toList());
         order.setItems(items);
 
-        // 5) สร้าง EMV-QR (ล็อกยอดเงิน)
         order.setPromptpayTarget(promptpayTarget);
         try {
             String qrDataUrl = PromptPayQr.generatePromptPayQrDataUrl(promptpayTarget, total, 360, true);
             order.setPromptpayQrUrl(qrDataUrl);
         } catch (Exception e) {
-            // เผื่อมีปัญหาสร้างภาพ EMV QR ให้ fallback ไปใช้ promptpay.io
             String amt = String.format(java.util.Locale.US, "%.2f", total * 1.0);
             order.setPromptpayQrUrl("https://promptpay.io/" + promptpayTarget + ".png?amount=" + amt + "&size=360");
         }
 
-        // 6) บันทึกออเดอร์
         order = orderRepo.save(order);
 
-        // 7) เคลียร์ตะกร้าทันทีหลังสร้างออเดอร์
         cart.setItems(new ArrayList<>());
         cart.setShippingFee(0);
-        cart.setUpdatedAt(LocalDateTime.from(Instant.now())); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
+        cart.setUpdatedAt(Instant.now());
         cartRepo.save(cart);
 
-        // 8) ตอบกลับ
         return new CreateOrderResponse(
                 order.getId(),
                 order.getTotal(),
@@ -139,14 +128,11 @@ public class OrderService {
         );
     }
 
-
-    /** อ่านรายละเอียดออเดอร์ */
     public OrderResponse getOrder(String id) {
         var o = orderRepo.findById(id).orElseThrow(() -> new IllegalStateException("Order not found"));
         return toResponse(o);
     }
 
-    /** ผู้ใช้แนบสลิป */
     public OrderResponse uploadSlip(String orderId, MultipartFile slip) {
         String userId = currentUserId();
         var order = orderRepo.findById(orderId).orElseThrow(() -> new IllegalStateException("Order not found"));
@@ -161,33 +147,30 @@ public class OrderService {
         var up = cloudinaryService.uploadFile(slip, "shirtshop/slips");
         order.setPaymentSlipUrl(up.getUrl());
         order.setStatus(OrderStatus.SLIP_UPLOADED);
-        order.setUpdatedAt(Instant.now()); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
+        order.setUpdatedAt(Instant.now());
 
         order = orderRepo.save(order);
         return toResponse(order);
     }
 
-    /** (สำหรับ Admin) ยืนยันการชำระ */
     public OrderResponse confirm(String id) {
         var o = orderRepo.findById(id).orElseThrow(() -> new IllegalStateException("Order not found"));
+        Instant now = Instant.now();
         o.setStatus(OrderStatus.PAID);
-        o.setPaidAt(Instant.now()); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
-        o.setUpdatedAt(Instant.now()); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
+        o.setPaidAt(now);
+        o.setUpdatedAt(now);
         orderRepo.save(o);
         return toResponse(o);
     }
 
-    /** (สำหรับ Admin) ปฏิเสธสลิป */
     public OrderResponse reject(String id, String reason) {
         var o = orderRepo.findById(id).orElseThrow(() -> new IllegalStateException("Order not found"));
         o.setStatus(OrderStatus.REJECTED);
-        o.setUpdatedAt(Instant.now()); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
-        // จะบันทึกเหตุผลไว้ใน field ใหม่ก็ได้ (เช่น o.setRejectReason(reason))
+        o.setUpdatedAt(Instant.now());
         orderRepo.save(o);
         return toResponse(o);
     }
 
-    /** กู้คืนสินค้าเข้าตะกร้าจากออเดอร์ที่ EXPIRED/REJECTED */
     public void restoreCartFromOrder(String orderId) {
         String userId = currentUserId();
         var order = orderRepo.findById(orderId).orElseThrow(() -> new IllegalStateException("Order not found"));
@@ -203,14 +186,14 @@ public class OrderService {
             Cart c = new Cart();
             c.setUserId(userId);
             c.setItems(new ArrayList<>());
-            c.setCreatedAt(LocalDateTime.from(Instant.now())); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
+            c.setCreatedAt(Instant.now());
             return c;
         });
 
         List<CartItem> items = order.getItems().stream().map(oi -> {
             CartItem ci = new CartItem();
             ci.setProductId(oi.getProductId());
-            ci.setName(oi.getName()); // Fix: เรียกใช้ getName()
+            ci.setName(oi.getName());
             ci.setImageUrl(oi.getImageUrl());
             ci.setUnitPrice(oi.getUnitPrice());
             ci.setColor(oi.getColor());
@@ -222,21 +205,19 @@ public class OrderService {
         cart.setItems(new ArrayList<>(items));
         cart.setShippingFee(0);
         int sub = items.stream().mapToInt(i -> i.getUnitPrice() * i.getQuantity()).sum();
-        // Assuming Cart has a setSubTotal method
         try {
             cart.getClass().getMethod("setSubTotal", int.class).invoke(cart, sub);
         } catch (Exception ignored) {
-            // It's better to have a direct setter: cart.setSubTotal(sub);
+            // It is better to have a direct setter like cart.setSubTotal(sub)
         }
-        cart.setUpdatedAt(LocalDateTime.from(Instant.now())); // Fix: แก้ประเภทข้อมูลกลับไปเป็น Instant
+        cart.setUpdatedAt(Instant.now());
         cartRepo.save(cart);
     }
 
-    /** map Entity -> DTO */
     private OrderResponse toResponse(Order o) {
         var items = o.getItems().stream().map(it -> Map.<String, Object>of(
                 "productId", it.getProductId(),
-                "name", it.getName(), // Fix: เรียกใช้ getName()
+                "name", it.getName(),
                 "imageUrl", it.getImageUrl(),
                 "unitPrice", it.getUnitPrice(),
                 "color", it.getColor(),
@@ -244,7 +225,7 @@ public class OrderService {
                 "quantity", it.getQuantity()
         )).collect(Collectors.toList());
 
-        // Assuming OrderResponse constructor can handle Instant type
+        // Fix: ตอนนี้ทุกอย่างเป็น Instant แล้ว จะไม่มี Error
         return new OrderResponse(
                 o.getId(), o.getUserId(), items,
                 o.getSubTotal(), o.getShippingFee(), o.getTotal(),
@@ -256,12 +237,12 @@ public class OrderService {
     }
 
     public OrderListResponse listMyOrders(List<OrderStatus> statuses, int page, int size) {
-        String userId = currentUserId(); // เมธอดเดิมของคุณ
+        String userId = currentUserId();
 
         Pageable pageable = PageRequest.of(
                 Math.max(0, page),
                 Math.max(1, size),
-                Sort.by(Sort.Direction.DESC, "createdAt") // เรียงใหม่ล่าสุดก่อน
+                Sort.by(Sort.Direction.DESC, "createdAt")
         );
 
         Page<Order> pg = (statuses == null || statuses.isEmpty())
@@ -269,7 +250,7 @@ public class OrderService {
                 : orderRepo.findByUserIdAndStatusIn(userId, statuses, pageable);
 
         var items = pg.getContent().stream()
-                .map(this::toResponse) // หรือ map เป็น Summary DTO ตามที่คุณนิยามไว้
+                .map(this::toResponse)
                 .toList();
 
         return new OrderListResponse(
@@ -280,5 +261,4 @@ public class OrderService {
                 pg.getTotalPages()
         );
     }
-
 }

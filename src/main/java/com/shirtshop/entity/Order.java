@@ -6,6 +6,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,12 +28,11 @@ public class Order {
     // PromptPay info (เพื่อแสดง QR)
     private String promptpayTarget;        // หมายเลข PromptPay/เบอร์/เลขบัตรประชาชน (string)
     private String promptpayQrUrl;         // URL รูปจาก promptpay.io
-    private Instant expiresAt;             // เวลาหมดอายุสแกน (เช่น +15 นาที)
 
     // Slip
     private String paymentSlipUrl;         // URL สลิป (Cloudinary)
-    private Instant paidAt;                // เวลาแอดมินคอนเฟิร์ม
-
     private Instant createdAt;
     private Instant updatedAt;
+    private Instant paidAt;
+    private Instant expiresAt;
 }
