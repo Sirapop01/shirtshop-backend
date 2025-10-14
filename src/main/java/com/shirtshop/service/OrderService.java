@@ -10,11 +10,13 @@ import com.shirtshop.repository.AddressRepository;
 import com.shirtshop.repository.CartRepository;
 import com.shirtshop.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,6 +30,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderService {
 
     private final CartRepository cartRepo;
@@ -38,7 +41,7 @@ public class OrderService {
     @Value("${app.payment.promptpay.target}")
     private String promptpayTarget;
 
-    @Value("${app.payment.promptpay.expire-minutes:15}")
+    @Value("${app.payment.promptpay.expire-minutes:1}")
     private int expireMinutes;
 
     private String currentUserId() {
@@ -48,6 +51,33 @@ public class OrderService {
         if (p instanceof String s) return s;
         if (p instanceof org.springframework.security.core.userdetails.UserDetails ud) return ud.getUsername();
         throw new IllegalStateException("Unauthenticated");
+    }
+
+    @Scheduled(fixedRate = 30000)
+    public void cleanupExpiredOrders() {
+        log.info("Running scheduled job: Cleaning up expired orders...");
+
+        // 1. ค้นหาออเดอร์ทั้งหมดในระบบที่สถานะเป็น PENDING_PAYMENT และหมดอายุแล้ว
+        List<Order> expiredOrders = orderRepo.findByStatusAndExpiresAtBefore(
+                OrderStatus.PENDING_PAYMENT,
+                Instant.now()
+        );
+
+        if (expiredOrders.isEmpty()) {
+            log.info("No expired orders found.");
+            return;
+        }
+
+        // 2. อัปเดตสถานะของออเดอร์ทั้งหมดที่พบ
+        log.info("Found {} expired orders. Updating status to EXPIRED.", expiredOrders.size());
+        for (Order order : expiredOrders) {
+            order.setStatus(OrderStatus.EXPIRED);
+            order.setUpdatedAt(Instant.now());
+        }
+
+        // 3. บันทึกการเปลี่ยนแปลงลงฐานข้อมูล
+        orderRepo.saveAll(expiredOrders);
+        log.info("Successfully updated {} expired orders.", expiredOrders.size());
     }
 
     public CreateOrderResponse createPromptPayOrder(CreateOrderRequest req) {
@@ -153,112 +183,121 @@ public class OrderService {
         return toResponse(order);
     }
 
-    public OrderResponse confirm(String id) {
-        var o = orderRepo.findById(id).orElseThrow(() -> new IllegalStateException("Order not found"));
-        Instant now = Instant.now();
-        o.setStatus(OrderStatus.PAID);
-        o.setPaidAt(now);
-        o.setUpdatedAt(now);
-        orderRepo.save(o);
-        return toResponse(o);
-    }
-
-    public OrderResponse reject(String id, String reason) {
-        var o = orderRepo.findById(id).orElseThrow(() -> new IllegalStateException("Order not found"));
-        o.setStatus(OrderStatus.REJECTED);
-        o.setUpdatedAt(Instant.now());
-        orderRepo.save(o);
-        return toResponse(o);
-    }
-
-    public void restoreCartFromOrder(String orderId) {
-        String userId = currentUserId();
-        var order = orderRepo.findById(orderId).orElseThrow(() -> new IllegalStateException("Order not found"));
-
-        if (!order.getUserId().equals(userId)) {
-            throw new IllegalStateException("Forbidden");
-        }
-        if (!(order.getStatus() == OrderStatus.EXPIRED || order.getStatus() == OrderStatus.REJECTED)) {
-            throw new IllegalStateException("Only expired/rejected orders can be restored");
-        }
-
-        var cart = cartRepo.findByUserId(userId).orElseGet(() -> {
-            Cart c = new Cart();
-            c.setUserId(userId);
-            c.setItems(new ArrayList<>());
-            c.setCreatedAt(Instant.now());
-            return c;
-        });
-
-        List<CartItem> items = order.getItems().stream().map(oi -> {
-            CartItem ci = new CartItem();
-            ci.setProductId(oi.getProductId());
-            ci.setName(oi.getName());
-            ci.setImageUrl(oi.getImageUrl());
-            ci.setUnitPrice(oi.getUnitPrice());
-            ci.setColor(oi.getColor());
-            ci.setSize(oi.getSize());
-            ci.setQuantity(oi.getQuantity());
-            return ci;
-        }).collect(Collectors.toList());
-
-        cart.setItems(new ArrayList<>(items));
-        cart.setShippingFee(0);
-        int sub = items.stream().mapToInt(i -> i.getUnitPrice() * i.getQuantity()).sum();
-        try {
-            cart.getClass().getMethod("setSubTotal", int.class).invoke(cart, sub);
-        } catch (Exception ignored) {
-            // It is better to have a direct setter like cart.setSubTotal(sub)
-        }
-        cart.setUpdatedAt(Instant.now());
-        cartRepo.save(cart);
-    }
-
     private OrderResponse toResponse(Order o) {
-        var items = o.getItems().stream().map(it -> Map.<String, Object>of(
-                "productId", it.getProductId(),
-                "name", it.getName(),
-                "imageUrl", it.getImageUrl(),
-                "unitPrice", it.getUnitPrice(),
-                "color", it.getColor(),
-                "size", it.getSize(),
-                "quantity", it.getQuantity()
-        )).collect(Collectors.toList());
+        // แปลงรายการสินค้า (items) โดยมีการป้องกันค่า null
+        var items = o.getItems().stream().map(it ->
+                // ใช้วิธีตรวจสอบค่า null ก่อนส่งเข้า Map.of()
+                // เพื่อป้องกัน NullPointerException
+                Map.<String, Object>of(
+                        "productId", it.getProductId() != null ? it.getProductId() : "",
+                        "name", it.getName() != null ? it.getName() : "Unknown Product", // ใส่ค่าเริ่มต้นเผื่อชื่อเป็น null
+                        "imageUrl", it.getImageUrl() != null ? it.getImageUrl() : "",
+                        "unitPrice", it.getUnitPrice(), // สมมติว่า int/Integer ไม่เป็น null
+                        "color", it.getColor() != null ? it.getColor() : "",
+                        "size", it.getSize() != null ? it.getSize() : "",
+                        "quantity", it.getQuantity() // สมมติว่า int/Integer ไม่เป็น null
+                )
+        ).collect(Collectors.toList());
 
-        // Fix: ตอนนี้ทุกอย่างเป็น Instant แล้ว จะไม่มี Error
+        // สร้างและส่งคืน OrderResponse DTO
+        // (ตรวจสอบให้แน่ใจว่า Constructor ของ OrderResponse ตรงกับพารามิเตอร์เหล่านี้)
         return new OrderResponse(
-                o.getId(), o.getUserId(), items,
-                o.getSubTotal(), o.getShippingFee(), o.getTotal(),
-                o.getPaymentMethod(), o.getStatus(),
-                o.getPromptpayTarget(), o.getPromptpayQrUrl(),
-                o.getExpiresAt(), o.getPaymentSlipUrl(),
-                o.getCreatedAt(), o.getUpdatedAt()
+                o.getId(),
+                o.getUserId(),
+                items,
+                o.getSubTotal(),
+                o.getShippingFee(),
+                o.getTotal(),
+                o.getPaymentMethod(),
+                o.getStatus(),
+                o.getPromptpayTarget(),
+                o.getPromptpayQrUrl(),
+                o.getExpiresAt(),
+                o.getPaymentSlipUrl(),
+                o.getCreatedAt(),
+                o.getUpdatedAt()
         );
     }
 
-    public OrderListResponse listMyOrders(List<OrderStatus> statuses, int page, int size) {
-        String userId = currentUserId();
+    public OrderListResponse listMyOrders(String userId, List<OrderStatus> statuses, Pageable pageable) {
 
-        Pageable pageable = PageRequest.of(
-                Math.max(0, page),
-                Math.max(1, size),
-                Sort.by(Sort.Direction.DESC, "createdAt")
-        );
+        Page<Order> pg; // ประกาศตัวแปร Page
+        if (statuses == null || statuses.isEmpty()) {
+            // ✅ เรียก Repository โดยส่ง Pageable ไปตรงๆ
+            pg = orderRepo.findByUserId(userId, pageable);
+        } else {
+            // ✅ เรียก Repository โดยส่ง Pageable ไปตรงๆ
+            pg = orderRepo.findByUserIdAndStatusIn(userId, statuses, pageable);
+        }
 
-        Page<Order> pg = (statuses == null || statuses.isEmpty())
-                ? orderRepo.findByUserId(userId, pageable)
-                : orderRepo.findByUserIdAndStatusIn(userId, statuses, pageable);
-
+        // แปลง Page<Order> เป็น List<OrderResponse>
         var items = pg.getContent().stream()
                 .map(this::toResponse)
                 .toList();
 
+        // ✅ สร้าง OrderListResponse จากข้อมูลใน Page object
         return new OrderListResponse(
                 items,
-                pg.getNumber(),
-                pg.getSize(),
+                pg.getNumber(),      // ดึง page number จาก Page object
+                pg.getSize(),        // ดึง page size จาก Page object
                 pg.getTotalElements(),
                 pg.getTotalPages()
         );
     }
+
+    public void restoreCartFromOrder(String orderId) {
+        // 1. ดึง ID ของผู้ใช้ปัจจุบันจาก Security Context
+        String userId = currentUserId();
+
+        // 2. ค้นหาออเดอร์จาก ID ที่ได้รับมา ถ้าไม่เจอให้โยน Exception
+        Order order = orderRepo.findById(orderId)
+                .orElseThrow(() -> new IllegalStateException("Order not found with id: " + orderId));
+
+        // 3. ตรวจสอบความเป็นเจ้าของออเดอร์
+        if (!order.getUserId().equals(userId)) {
+            throw new IllegalStateException("Forbidden: User does not own this order");
+        }
+
+        // 4. ตรวจสอบสถานะของออเดอร์ว่าสามารถกู้คืนได้หรือไม่
+        if (!(order.getStatus() == OrderStatus.EXPIRED || order.getStatus() == OrderStatus.REJECTED)) {
+            throw new IllegalStateException("Only EXPIRED or REJECTED orders can be restored. Current status: " + order.getStatus());
+        }
+
+        // 5. ดึงตะกร้าสินค้าปัจจุบันของผู้ใช้ หรือสร้างใหม่ถ้ายังไม่มี
+        Cart cart = cartRepo.findByUserId(userId)
+                .orElseGet(() -> {
+                    Cart newCart = new Cart();
+                    newCart.setUserId(userId);
+                    newCart.setItems(new ArrayList<>());
+                    newCart.setCreatedAt(Instant.now());
+                    return newCart;
+                });
+
+        // 6. แปลง OrderItems จากออเดอร์กลับไปเป็น CartItems
+        // (เราจะสร้าง List ใหม่ เพื่อไม่ให้กระทบกับ List เดิมในตะกร้า)
+        List<CartItem> itemsToRestore = order.getItems().stream()
+                .map(orderItem -> {
+                    CartItem cartItem = new CartItem();
+                    cartItem.setProductId(orderItem.getProductId());
+                    cartItem.setName(orderItem.getName());
+                    cartItem.setImageUrl(orderItem.getImageUrl());
+                    cartItem.setUnitPrice(orderItem.getUnitPrice());
+                    cartItem.setColor(orderItem.getColor());
+                    cartItem.setSize(orderItem.getSize());
+                    cartItem.setQuantity(orderItem.getQuantity());
+                    return cartItem;
+                })
+                .collect(Collectors.toList());
+
+        // 7. ตั้งค่ารายการสินค้าใหม่ให้กับตะกร้า (เขียนทับของเดิม)
+        cart.setItems(itemsToRestore);
+
+        // 8. คำนวณยอดรวมใหม่ (ถ้ามีตรรกะนี้อยู่) และอัปเดตเวลา
+        // recalc(cart); // หากคุณมีเมธอด recalc() ใน CartService ก็สามารถเรียกใช้ได้
+        cart.setUpdatedAt(Instant.now());
+
+        // 9. บันทึกตะกร้าที่อัปเดตแล้วลงฐานข้อมูล
+        cartRepo.save(cart);
+    }
+
 }
