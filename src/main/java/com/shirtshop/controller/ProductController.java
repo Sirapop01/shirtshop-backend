@@ -22,12 +22,6 @@ public class ProductController {
 
     private final ProductService productService;
 
-    /**
-     * Endpoint สำหรับสร้างสินค้าใหม่
-     * รับข้อมูลแบบ multipart/form-data ซึ่งประกอบด้วย
-     * - ส่วนของข้อมูลสินค้า (JSON)
-     * - ส่วนของไฟล์รูปภาพ
-     */
     @PostMapping(consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
     public ResponseEntity<ProductResponse> createProduct(
             @RequestPart("product") ProductRequest productRequest,
@@ -44,6 +38,12 @@ public class ProductController {
     public ResponseEntity<List<ProductResponse>> getAllProducts() {
         List<ProductResponse> products = productService.getAllProducts();
         return ResponseEntity.ok(products); // ส่ง Response กลับไปพร้อมสถานะ 200 OK
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<List<Product>> searchProducts(@RequestParam("q") String query) {
+        List<Product> products = productService.searchProducts(query);
+        return ResponseEntity.ok(products);
     }
 
     @GetMapping("/{id}")
@@ -72,6 +72,12 @@ public class ProductController {
     ) {
         ProductResponse updated = productService.updateProduct(id, productRequest, newImages, removeImagePublicIds);
         return ResponseEntity.ok(updated);
+    }
+
+    @GetMapping("/category/{categoryName}")
+    public ResponseEntity<List<Product>> getProductsByCategory(@PathVariable String categoryName) {
+        List<Product> products = productService.findByCategory(categoryName);
+        return ResponseEntity.ok(products);
     }
 
 }

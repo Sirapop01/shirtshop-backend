@@ -13,14 +13,17 @@ import java.util.Optional;
 
 public interface OrderRepository extends MongoRepository<Order, String> {
 
-    // ใช้ในหน้า “ประวัติการสั่งซื้อ” (แบ่งหน้า + เรียง)
+    // Pageable, คืนค่าเป็น Page
     Page<Order> findByUserId(String userId, Pageable pageable);
 
-    // กรองตามสถานะหลายค่า (เช่น PENDING_PAYMENT, SLIP_UPLOADED)
+    //  Pageable, คืนค่าเป็น Page
     Page<Order> findByUserIdAndStatusIn(String userId, List<OrderStatus> statuses, Pageable pageable);
 
     // ของเดิม: ใช้หาบิลล่าสุดที่ยังไม่หมดอายุ ในชุดสถานะที่กำหนด
     Optional<Order> findTopByUserIdAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
             String userId, List<OrderStatus> statuses, Instant now
     );
+
+    List<Order> findByStatusAndExpiresAtBefore(OrderStatus status, Instant time);
+
 }

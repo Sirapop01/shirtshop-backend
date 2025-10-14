@@ -6,11 +6,17 @@ import com.shirtshop.dto.CreateOrderResponse;
 import com.shirtshop.dto.OrderListResponse;
 import com.shirtshop.dto.OrderResponse;
 import com.shirtshop.entity.OrderStatus;
+import com.shirtshop.entity.User;
 import com.shirtshop.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+
+import org.springframework.data.domain.Pageable;
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -34,13 +40,17 @@ public class OrderController {
     }
 
     /** รายการออเดอร์ของผู้ใช้ปัจจุบัน (มีกรองสถานะ + เพจได้) */
-    @GetMapping("/my")
-    public ResponseEntity<OrderListResponse> myOrders(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
-            @RequestParam(name = "status", required = false) java.util.List<OrderStatus> statuses
-    ) {
-        return ResponseEntity.ok(orderService.listMyOrders(statuses, page, size));
+    @GetMapping("/my") // สมมติว่าเป็น endpoint นี้
+    public ResponseEntity<OrderListResponse> listMyOrders(
+            @RequestParam(required = false) List<OrderStatus> statuses,
+            Pageable pageable) { // ไม่ต้องมี @PageableDefault ก็ได้ถ้าตั้งค่า default ใน service
+
+        String userId = ((User) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
+
+        // ✅ ส่ง Pageable object ไปทั้งก้อนเลย
+        OrderListResponse response = orderService.listMyOrders(userId, statuses, pageable);
+
+        return ResponseEntity.ok(response);
     }
 
     /** อัปสลิปแนบการโอน */
@@ -50,6 +60,12 @@ public class OrderController {
             @RequestPart("file") org.springframework.web.multipart.MultipartFile file
     ) {
         return ResponseEntity.ok(orderService.uploadSlip(id, file));
+    }
+
+    @PostMapping("/{id:[a-f0-9]{24}}/restore-cart")
+    public ResponseEntity<Void> restoreCartFromOrder(@PathVariable String id) {
+        orderService.restoreCartFromOrder(id);
+        return ResponseEntity.ok().build(); // ส่งกลับ 200 OK เพื่อบอกว่าทำสำเร็จแล้ว
     }
 
 

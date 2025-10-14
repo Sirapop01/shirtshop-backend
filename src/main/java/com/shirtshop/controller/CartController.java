@@ -2,9 +2,11 @@
 package com.shirtshop.controller;
 
 import com.shirtshop.dto.cart.*;
+import com.shirtshop.entity.User;
 import com.shirtshop.service.CartService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,8 +18,13 @@ public class CartController {
 
     // NOTE: ในตัวอย่างนี้สมมติว่าคุณดึง userId มาจาก SecurityContext หรือ Header
     private String resolveUserId() {
-        // TODO: เปลี่ยนเป็นดึงจาก JWT ของคุณ
-        return "demo-user-id";
+        // ดึงข้อมูลผู้ใช้ที่ยืนยันตัวตนแล้วจาก SecurityContext
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (principal instanceof User user) {
+            return user.getId();
+        }
+        // เพิ่มการจัดการกรณีอื่นๆ ตามความเหมาะสม
+        throw new IllegalStateException("User not authenticated");
     }
 
     @GetMapping
