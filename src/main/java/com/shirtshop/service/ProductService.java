@@ -43,6 +43,12 @@ public class ProductService {
                 .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
     }
 
+    public List<Product> searchProducts(String query) {
+        // เรียกใช้เมธอดใน Repository เพื่อค้นหา
+        // ตัวอย่างนี้คือการค้นหาชื่อสินค้า (name) ที่มีคำค้นหา (query) ปรากฏอยู่ โดยไม่สนตัวพิมพ์เล็ก/ใหญ่
+        return productRepository.findByNameContainingIgnoreCase(query);
+    }
+
 
     public void deleteProduct(String productId) {
         // 1. ค้นหาสินค้า
@@ -213,6 +219,11 @@ public class ProductService {
         p.setUpdatedAt(LocalDateTime.now());
         Product saved = productRepository.save(p);
         return mapToProductResponse(saved);
+    }
+
+    public List<Product> findByCategory(String categoryName) {
+        // เรียกใช้เมธอดใน Repository เพื่อค้นหา
+        return productRepository.findByCategoryIgnoreCase(categoryName);
     }
 
 }
