@@ -123,10 +123,7 @@ public class OrderService {
         var items = cart.getItems().stream().map(ci -> {
             OrderItem oi = new OrderItem();
             oi.setProductId(ci.getProductId());
-            String name = (ci.getProductName() != null && !ci.getProductName().isBlank())
-                    ? ci.getProductName()
-                    : ci.getName();
-            oi.setName(name);
+            oi.setName(ci.getName());
             oi.setImageUrl(ci.getImageUrl());
             oi.setUnitPrice(ci.getUnitPrice());
             oi.setColor(ci.getColor());
