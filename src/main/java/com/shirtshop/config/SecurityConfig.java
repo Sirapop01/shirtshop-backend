@@ -51,6 +51,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/dashboard/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/customers/**").hasRole("ADMIN")
 
+                        // จัดการคำสั่งซื้อ (ดู/เปลี่ยนสถานะ) เฉพาะแอดมิน
+                        .requestMatchers("/api/admin/orders/**").hasRole("ADMIN")
+
                         // ---------- User protected ----------
                         .requestMatchers("/api/auth/me").authenticated()
                         .requestMatchers("/api/users/me").authenticated()

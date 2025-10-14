@@ -300,4 +300,65 @@ public class OrderService {
         cartRepo.save(cart);
     }
 
+    // === Admin: list orders ===
+    public Page<Order> adminListOrders(OrderStatus status, Pageable pageable) {
+        if (status == null) {
+            // ทั้งหมด
+            return orderRepo.findAll(pageable);
+        }
+        // กรองตามสถานะ
+        return orderRepo.findAllByStatus(status, pageable);
+    }
+
+    // === Admin: approve / reject ===
+    @org.springframework.transaction.annotation.Transactional
+    public Order adminChangeStatus(String orderId, OrderStatus next,
+                                   String adminUserId, String rejectReason) {
+        var order = orderRepo.findById(orderId)
+                .orElseThrow(() -> new IllegalStateException("Order not found"));
+
+        var current = order.getStatus();
+
+        // อนุญาตเฉพาะ: SLIP_UPLOADED -> PAID/REJECTED
+        if (current != OrderStatus.SLIP_UPLOADED ||
+                (next != OrderStatus.PAID && next != OrderStatus.REJECTED)) {
+            throw new IllegalStateException("Invalid status transition: " + current + " -> " + next);
+        }
+
+        if (next == OrderStatus.PAID) {
+            // ต้องมีสลิปก่อนถึงจะอนุมัติได้
+            if (order.getPaymentSlipUrl() == null || order.getPaymentSlipUrl().isBlank()) {
+                throw new IllegalStateException("Slip not uploaded");
+            }
+            // TODO: ตัดสต็อก/ออกใบเสร็จที่นี่ถ้าต้องการ
+            // inventoryService.decrease(order.getItems());
+        }
+
+        if (next == OrderStatus.REJECTED) {
+            // ถ้า entity มีฟิลด์ rejectReason ให้เซ็ต (ถ้ายังไม่มี ข้ามได้)
+            try {
+                var fld = order.getClass().getDeclaredField("rejectReason");
+                fld.setAccessible(true);
+                fld.set(order, rejectReason);
+            } catch (NoSuchFieldException | IllegalAccessException ignored) {}
+        }
+
+        // ถ้า entity มี verifiedBy/verifiedAt ให้เซ็ต (ไม่มีไม่เป็นไร)
+        try {
+            var vBy = order.getClass().getDeclaredField("verifiedBy");
+            vBy.setAccessible(true);
+            vBy.set(order, adminUserId);
+        } catch (Exception ignored) {}
+
+        try {
+            var vAt = order.getClass().getDeclaredField("verifiedAt");
+            vAt.setAccessible(true);
+            vAt.set(order, Instant.now());
+        } catch (Exception ignored) {}
+
+        order.setStatus(next);
+        order.setUpdatedAt(Instant.now());
+        return orderRepo.save(order);
+    }
+
 }

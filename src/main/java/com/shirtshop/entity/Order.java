@@ -35,4 +35,9 @@ public class Order {
     private Instant updatedAt;
     private Instant paidAt;
     private Instant expiresAt;
+
+    private String verifiedBy;     // userId ของแอดมินที่กด
+    private Instant verifiedAt;    // เวลาอนุมัติ/ปฏิเสธ
+    private String rejectReason;   // เหตุผลถ้า REJECTED
+
 }
