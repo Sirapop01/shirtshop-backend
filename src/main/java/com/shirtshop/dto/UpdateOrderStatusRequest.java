@@ -1,9 +1,9 @@
+// src/main/java/com/shirtshop/dto/UpdateOrderStatusRequest.java
 package com.shirtshop.dto;
 
 import com.shirtshop.entity.OrderStatus;
-import jakarta.validation.constraints.NotNull;
 
 public record UpdateOrderStatusRequest(
-        @NotNull OrderStatus status,  // PAID หรือ REJECTED
-        String rejectReason           // ใส่เมื่อ REJECTED
+        OrderStatus status,     // "PAID" | "REJECTED" | "CANCELED"
+        String rejectReason     // ใช้ได้ทั้ง reject/cancel (optional)
 ) {}

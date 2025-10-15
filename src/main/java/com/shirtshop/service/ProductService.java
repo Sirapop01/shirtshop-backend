@@ -1,6 +1,5 @@
 package com.shirtshop.service;
 
-
 import com.shirtshop.dto.*;
 import com.shirtshop.entity.Product;
 import com.shirtshop.entity.VariantStock;
@@ -10,12 +9,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
-
-import java.util.Collections;
 
 @Service
 @RequiredArgsConstructor
@@ -26,13 +23,9 @@ public class ProductService {
 
     /**
      * ดึงข้อมูลสินค้าทั้งหมด
-     * @return รายการสินค้าทั้งหมดในรูปแบบ ProductResponse
      */
     public List<ProductResponse> getAllProducts() {
-        // ดึงข้อมูลสินค้าทั้งหมดจากฐานข้อมูล
         List<Product> products = productRepository.findAll();
-
-        // ใช้ Stream API เพื่อแปลง Product Entity ทุกตัวให้เป็น ProductResponse DTO
         return products.stream()
                 .map(this::mapToProductResponse)
                 .collect(Collectors.toList());
@@ -44,25 +37,18 @@ public class ProductService {
     }
 
     public List<Product> searchProducts(String query) {
-        // เรียกใช้เมธอดใน Repository เพื่อค้นหา
-        // ตัวอย่างนี้คือการค้นหาชื่อสินค้า (name) ที่มีคำค้นหา (query) ปรากฏอยู่ โดยไม่สนตัวพิมพ์เล็ก/ใหญ่
         return productRepository.findByNameContainingIgnoreCase(query);
     }
 
-
     public void deleteProduct(String productId) {
-        // 1. ค้นหาสินค้า
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
-        // 2. ลบรูปภาพทั้งหมดใน Cloudinary
         if (product.getImagePublicIds() != null && !product.getImagePublicIds().isEmpty()) {
             for (String publicId : product.getImagePublicIds()) {
                 cloudinaryService.deleteFile(publicId);
             }
         }
-
-        // 3. ลบข้อมูลสินค้าออกจาก MongoDB
         productRepository.delete(product);
     }
 
@@ -123,7 +109,7 @@ public class ProductService {
         r.setStockQuantity(product.getStockQuantity());
         r.setCreatedAt(product.getCreatedAt());
 
-        // จัดการเรื่องรูปภาพ
+        // รูปภาพ
         r.setImageUrls(product.getImageUrls() != null ? product.getImageUrls() : Collections.emptyList());
         if (product.getImagePublicIds() != null && product.getImageUrls() != null) {
             List<ImageInfo> imgs = new ArrayList<>();
@@ -138,7 +124,7 @@ public class ProductService {
         r.setAvailableColors(product.getAvailableColors() != null ? product.getAvailableColors() : Collections.emptyList());
         r.setAvailableSizes(product.getAvailableSizes() != null ? product.getAvailableSizes() : Collections.emptyList());
 
-        // จัดการเรื่อง Variant Stocks
+        // Variant Stocks
         if (product.getVariantStocks() != null) {
             List<VariantStockResponse> vs = product.getVariantStocks().stream().map(v -> {
                 VariantStockResponse o = new VariantStockResponse();
@@ -176,7 +162,6 @@ public class ProductService {
             for (String pid : removeImagePublicIds) {
                 cloudinaryService.deleteFile(pid);
             }
-            // remove ออกจาก product ทั้งสองลิสต์
             if (p.getImagePublicIds() != null && p.getImageUrls() != null) {
                 for (String pid : removeImagePublicIds) {
                     int idx = p.getImagePublicIds().indexOf(pid);
@@ -194,6 +179,7 @@ public class ProductService {
         if (newImages != null && !newImages.isEmpty()) {
             for (MultipartFile img : newImages) {
                 CloudinaryUploadResponse resp = cloudinaryService.uploadFile(img, "products");
+                ensureList(p);
                 p.getImagePublicIds().add(resp.getPublicId());
                 p.getImageUrls().add(resp.getUrl());
             }
@@ -212,7 +198,6 @@ public class ProductService {
             int sum = variants.stream().mapToInt(VariantStock::getQuantity).sum();
             p.setStockQuantity(sum);
         } else {
-            // fallback เก่า
             p.setStockQuantity(productRequest.getStockQuantity());
         }
 
@@ -222,8 +207,35 @@ public class ProductService {
     }
 
     public List<Product> findByCategory(String categoryName) {
-        // เรียกใช้เมธอดใน Repository เพื่อค้นหา
         return productRepository.findByCategoryIgnoreCase(categoryName);
     }
 
+    /** ✅ ใช้ใน Dashboard: Top products */
+    public List<TopProductResponse> getTopProducts(int limit, String range) {
+        // TODO: ถ้ามี OrderRepository ให้ aggregate ยอดขายจริงตามช่วงเวลา (range)
+        // Fallback ชั่วคราว: ยังไม่มีข้อมูลยอดขาย -> units = 0, revenue = 0
+        // และเรียงจาก stockQuantity มาก -> น้อย เพื่อให้มีรายการขึ้นหน้าจอ
+
+        List<Product> all = productRepository.findAll();
+
+        return all.stream()
+                .sorted(Comparator
+                        .comparing(Product::getStockQuantity, Comparator.nullsFirst(Comparator.naturalOrder()))
+                        .reversed()
+                        .thenComparing(p -> Optional.ofNullable(p.getUpdatedAt()).orElse(LocalDateTime.MIN), Comparator.reverseOrder()))
+                .limit(Math.max(1, limit))
+                .map(p -> TopProductResponse.builder()
+                        .id(p.getId())
+                        .name(p.getName())
+                        .units(0L) // ยังไม่เชื่อมออเดอร์ -> 0 ไปก่อน
+                        .revenue(BigDecimal.ZERO)
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    // ---------- helpers ----------
+    private void ensureList(Product p) {
+        if (p.getImagePublicIds() == null) p.setImagePublicIds(new ArrayList<>());
+        if (p.getImageUrls() == null) p.setImageUrls(new ArrayList<>());
+    }
 }

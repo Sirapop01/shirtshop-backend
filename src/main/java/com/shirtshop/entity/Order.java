@@ -38,6 +38,7 @@ public class Order {
 
     private String verifiedBy;     // userId ของแอดมินที่กด
     private Instant verifiedAt;    // เวลาอนุมัติ/ปฏิเสธ
-    private String rejectReason;   // เหตุผลถ้า REJECTED
+    private boolean stockAdjusted; // true เมื่อเคยตัดสต๊อกสำเร็จ
+    private boolean stockRestored; // true เมื่อเคยคืนสต๊อกสำเร็จ
 
 }

@@ -17,28 +17,30 @@ public class CustomerAdminController {
 
     private final CustomerAdminService customerAdminService;
 
-    /**
-     * ดึงลูกค้าทั้งหมด
-     */
+    /** ดึงลูกค้าทั้งหมด */
     @GetMapping
     public ResponseEntity<List<CustomerItemResponse>> listAll() {
         return ResponseEntity.ok(customerAdminService.getAllCustomers());
     }
 
-    /**
-     * ดูรายละเอียดโปรไฟล์ลูกค้า
-     */
-    @GetMapping("/{id}")
-    public ResponseEntity<UserDetailResponse> getById(@PathVariable String id) {
-        return ResponseEntity.ok(customerAdminService.getDetailById(id)); // ✅ แก้ชื่อให้ตรง
+    /** นับจำนวนลูกค้า (ใช้ใน Dashboard) */
+    @GetMapping("/count")
+    public ResponseEntity<Map<String, Long>> count() {
+        long total = customerAdminService.countAll(); // ให้มีเมธอดนี้ใน service (repo.count())
+        // ใส่ทั้ง "total" และ "count" เผื่อ frontend อิง key ใด key หนึ่ง
+        return ResponseEntity.ok(Map.of("total", total, "count", total));
     }
 
-    /**
-     * ลบลูกค้า
-     */
-    @DeleteMapping("/{id}")
+    /** ดูรายละเอียดโปรไฟล์ลูกค้า (รับเฉพาะ Mongo ObjectId 24 ตัวฐานสิบหก) */
+    @GetMapping("/{id:[a-f0-9]{24}}")
+    public ResponseEntity<UserDetailResponse> getById(@PathVariable String id) {
+        return ResponseEntity.ok(customerAdminService.getDetailById(id));
+    }
+
+    /** ลบลูกค้า (รับเฉพาะ Mongo ObjectId) */
+    @DeleteMapping("/{id:[a-f0-9]{24}}")
     public ResponseEntity<Void> delete(@PathVariable String id) {
-        customerAdminService.deleteCustomerById(id); // ✅ แก้ชื่อให้ตรง
+        customerAdminService.deleteCustomerById(id);
         return ResponseEntity.noContent().build();
     }
 }
