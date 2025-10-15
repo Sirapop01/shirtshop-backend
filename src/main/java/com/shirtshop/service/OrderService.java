@@ -13,9 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -23,10 +21,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
+import java.lang.reflect.Method;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +34,7 @@ public class OrderService {
     private final OrderRepository orderRepo;
     private final CloudinaryService cloudinaryService;
     private final AddressRepository addressRepo;
+    private final InventoryService inventoryService;
 
     @Value("${app.payment.promptpay.target}")
     private String promptpayTarget;
@@ -73,6 +71,9 @@ public class OrderService {
         for (Order order : expiredOrders) {
             order.setStatus(OrderStatus.EXPIRED);
             order.setUpdatedAt(Instant.now());
+
+            // deduct stock once when slip uploaded
+            inventoryService.deductOnSlipUploaded(order);
         }
 
         // 3. บันทึกการเปลี่ยนแปลงลงฐานข้อมูล
@@ -181,6 +182,9 @@ public class OrderService {
         order.setPaymentSlipUrl(up.getUrl());
         order.setStatus(OrderStatus.SLIP_UPLOADED);
         order.setUpdatedAt(Instant.now());
+
+        // deduct stock once when slip uploaded
+        inventoryService.deductOnSlipUploaded(order);
 
         order = orderRepo.save(order);
         return toResponse(order);
@@ -314,54 +318,107 @@ public class OrderService {
     }
 
     // === Admin: approve / reject ===
-    @org.springframework.transaction.annotation.Transactional
-    public Order adminChangeStatus(String orderId, OrderStatus next,
-                                   String adminUserId, String rejectReason) {
-        var order = orderRepo.findById(orderId)
-                .orElseThrow(() -> new IllegalStateException("Order not found"));
+    // ----- วางทับ/เพิ่มเมธอดนี้ในคลาส OrderService -----
+    public OrderResponse adminChangeStatus(String orderId, String actionRaw, String note, String s) {
+        Order order = orderRepo.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
 
-        var current = order.getStatus();
+        String action = actionRaw == null ? "" : actionRaw.trim().toUpperCase();
 
-        // อนุญาตเฉพาะ: SLIP_UPLOADED -> PAID/REJECTED
-        if (current != OrderStatus.SLIP_UPLOADED ||
-                (next != OrderStatus.PAID && next != OrderStatus.REJECTED)) {
-            throw new IllegalStateException("Invalid status transition: " + current + " -> " + next);
-        }
+        switch (action) {
 
-        if (next == OrderStatus.PAID) {
-            // ต้องมีสลิปก่อนถึงจะอนุมัติได้
-            if (order.getPaymentSlipUrl() == null || order.getPaymentSlipUrl().isBlank()) {
-                throw new IllegalStateException("Slip not uploaded");
+            // อนุมัติ: รองรับทั้ง APPROVE, APPROVED, PAID
+            case "APPROVE", "APPROVED", "PAID" -> {
+                if (order.getStatus() != OrderStatus.SLIP_UPLOADED) {
+                    throw new IllegalArgumentException("Only SLIP_UPLOADED can be approved");
+                }
+                order.setStatus(OrderStatus.PAID);   // ไม่ตัดสต๊อกซ้ำ
+                order.setUpdatedAt(Instant.now());
             }
-            // TODO: ตัดสต็อก/ออกใบเสร็จที่นี่ถ้าต้องการ
-            // inventoryService.decrease(order.getItems());
+
+            // ปฏิเสธ: รองรับทั้ง REJECT, REJECTED
+            case "REJECT", "REJECTED" -> {
+                if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
+                    throw new IllegalArgumentException("Order already closed");
+                }
+                inventoryService.restoreOnClosed(order); // คืนสต๊อก
+                order.setStatus(OrderStatus.REJECTED);
+                order.setUpdatedAt(Instant.now());
+            }
+
+            // ยกเลิก: รองรับทั้ง CANCEL, CANCELED
+            case "CANCEL", "CANCELED" -> {
+                if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
+                    throw new IllegalArgumentException("Order already closed");
+                }
+                inventoryService.restoreOnClosed(order); // คืนสต๊อก
+                order.setStatus(OrderStatus.CANCELED);
+                order.setUpdatedAt(Instant.now());
+            }
+
+            default -> throw new IllegalArgumentException("Unsupported action: " + actionRaw);
         }
 
-        if (next == OrderStatus.REJECTED) {
-            // ถ้า entity มีฟิลด์ rejectReason ให้เซ็ต (ถ้ายังไม่มี ข้ามได้)
-            try {
-                var fld = order.getClass().getDeclaredField("rejectReason");
-                fld.setAccessible(true);
-                fld.set(order, rejectReason);
-            } catch (NoSuchFieldException | IllegalAccessException ignored) {}
+
+        Order saved = orderRepo.save(order);
+        return mapToOrderResponse(saved); // ถ้ายังไม่มีเมธอดนี้ ให้ใส่ helper ด้านล่าง
+    }
+    // --- ใช้แทน mapToOrderResponse เดิม ---
+    // ===== Helper: map Order -> OrderResponse =====
+    private OrderResponse mapToOrderResponse(Order o) {
+        // 1) แปลงรายการสินค้า: ใช้ฟิลด์จาก OrderItem ของคุณโดยตรง
+        List<Map<String, Object>> itemsPayload = new ArrayList<>();
+        if (o.getItems() != null) {
+            for (OrderItem it : o.getItems()) {
+                Map<String, Object> m = new HashMap<>();
+                m.put("productId", it.getProductId());
+                m.put("name", it.getName());
+                m.put("imageUrl", it.getImageUrl());
+                m.put("color", it.getColor());
+                m.put("size", it.getSize());
+                m.put("quantity", it.getQuantity());
+                m.put("unitPrice", it.getUnitPrice());
+                itemsPayload.add(m);
+            }
         }
 
-        // ถ้า entity มี verifiedBy/verifiedAt ให้เซ็ต (ไม่มีไม่เป็นไร)
-        try {
-            var vBy = order.getClass().getDeclaredField("verifiedBy");
-            vBy.setAccessible(true);
-            vBy.set(order, adminUserId);
-        } catch (Exception ignored) {}
+        // 2) ยอดรวมต่าง ๆ (กันชื่อเมธอดไม่ตรงด้วย reflection แบบปลอดภัย)
+        int subTotal    = tryInt(o, "getSubTotal", "getSubtotal"); // มีอันไหนใช้ได้ก็จะได้ค่า
+        int shippingFee = tryInt(o, "getShippingFee");
+        int total       = tryInt(o, "getTotal");
+        if (total == 0 && (subTotal != 0 || shippingFee != 0)) {
+            total = subTotal + shippingFee;
+        }
 
-        try {
-            var vAt = order.getClass().getDeclaredField("verifiedAt");
-            vAt.setAccessible(true);
-            vAt.set(order, Instant.now());
-        } catch (Exception ignored) {}
-
-        order.setStatus(next);
-        order.setUpdatedAt(Instant.now());
-        return orderRepo.save(order);
+        // 3) สร้าง record OrderResponse ตามลำดับพารามิเตอร์จริงของคุณ
+        return new OrderResponse(
+                o.getId(),
+                o.getUserId(),
+                itemsPayload,
+                subTotal,
+                shippingFee,
+                total,
+                o.getPaymentMethod(),
+                o.getStatus(),
+                o.getPromptpayTarget(),
+                o.getPromptpayQrUrl(),
+                o.getExpiresAt(),
+                o.getPaymentSlipUrl(),
+                o.getCreatedAt(),
+                o.getUpdatedAt()
+        );
     }
 
+    /* ---------- helpers สำหรับข้อ 2 (reflection เฉพาะยอดรวม) ---------- */
+    private static int tryInt(Object target, String... methodNames) {
+        if (target == null) return 0;
+        for (String name : methodNames) {
+            try {
+                Method m = target.getClass().getMethod(name);
+                Object v = m.invoke(target);
+                if (v instanceof Number n) return n.intValue();
+            } catch (Exception ignored) { /* ข้ามไปชื่อถัดไป */ }
+        }
+        return 0;
+    }
 }

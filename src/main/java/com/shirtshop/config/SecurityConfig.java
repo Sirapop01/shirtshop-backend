@@ -53,6 +53,8 @@ public class SecurityConfig {
 
                         // จัดการคำสั่งซื้อ (ดู/เปลี่ยนสถานะ) เฉพาะแอดมิน
                         .requestMatchers("/api/admin/orders/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET,   "/api/admin/orders/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/admin/orders/**").hasRole("ADMIN")
 
                         // ---------- User protected ----------
                         .requestMatchers("/api/auth/me").authenticated()
