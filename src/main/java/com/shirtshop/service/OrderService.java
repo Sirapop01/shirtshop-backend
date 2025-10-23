@@ -221,6 +221,7 @@ public class OrderService {
                 o.getPromptpayQrUrl(),
                 o.getExpiresAt(),
                 o.getPaymentSlipUrl(),
+                o.getStatusNote(),
                 o.getCreatedAt(),
                 o.getUpdatedAt()
         );
@@ -319,50 +320,54 @@ public class OrderService {
 
     // === Admin: approve / reject ===
     // ----- วางทับ/เพิ่มเมธอดนี้ในคลาส OrderService -----
-    public OrderResponse adminChangeStatus(String orderId, String actionRaw, String note, String s) {
+    public OrderResponse adminChangeStatus(String orderId,
+                                           OrderStatus newStatus,
+                                           String adminId,
+                                           String note) {
+
         Order order = orderRepo.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
 
-        String action = actionRaw == null ? "" : actionRaw.trim().toUpperCase();
-
-        switch (action) {
-
-            // อนุมัติ: รองรับทั้ง APPROVE, APPROVED, PAID
-            case "APPROVE", "APPROVED", "PAID" -> {
-                if (order.getStatus() != OrderStatus.SLIP_UPLOADED) {
-                    throw new IllegalArgumentException("Only SLIP_UPLOADED can be approved");
-                }
-                order.setStatus(OrderStatus.PAID);   // ไม่ตัดสต๊อกซ้ำ
-                order.setUpdatedAt(Instant.now());
-            }
-
-            // ปฏิเสธ: รองรับทั้ง REJECT, REJECTED
-            case "REJECT", "REJECTED" -> {
-                if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
-                    throw new IllegalArgumentException("Order already closed");
-                }
-                inventoryService.restoreOnClosed(order); // คืนสต๊อก
-                order.setStatus(OrderStatus.REJECTED);
-                order.setUpdatedAt(Instant.now());
-            }
-
-            // ยกเลิก: รองรับทั้ง CANCEL, CANCELED
-            case "CANCEL", "CANCELED" -> {
-                if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
-                    throw new IllegalArgumentException("Order already closed");
-                }
-                inventoryService.restoreOnClosed(order); // คืนสต๊อก
-                order.setStatus(OrderStatus.CANCELED);
-                order.setUpdatedAt(Instant.now());
-            }
-
-            default -> throw new IllegalArgumentException("Unsupported action: " + actionRaw);
+        if (newStatus == null) {
+            throw new IllegalArgumentException("Status is required");
         }
 
+        switch (newStatus) {
+            case PAID -> {
+                if (order.getStatus() != OrderStatus.SLIP_UPLOADED) {
+                    throw new IllegalArgumentException("Only SLIP_UPLOADED can be approved (to PAID)");
+                }
+                order.setStatus(OrderStatus.PAID);
+                order.setStatusNote(null);
+                order.setUpdatedAt(Instant.now());
+            }
+            case REJECTED -> {
+                if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
+                    throw new IllegalArgumentException("Order already closed");
+                }
+                inventoryService.restoreOnClosed(order); // คืนสต๊อก (ถ้ามีกติกานี้)
+                order.setStatus(OrderStatus.REJECTED);
+                order.setStatusNote(safeNote(note));
+                order.setStatusNote(safeNote(note));      // << เก็บเหตุผล
+                order.setUpdatedAt(Instant.now());        // << อัปเดตเวลา
+            }
+            case CANCELED -> {
+                if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
+                    throw new IllegalArgumentException("Order already closed");
+                }
+                inventoryService.restoreOnClosed(order);
+                order.setStatus(OrderStatus.CANCELED);
+                order.setStatusNote(safeNote(note));
+                order.setStatusNote(safeNote(note));      // << เก็บเหตุผล
+                order.setUpdatedAt(Instant.now());        // << อัปเดตเวลา
+            }
+            default -> throw new IllegalArgumentException("Unsupported status: " + newStatus);
+        }
 
         Order saved = orderRepo.save(order);
-        return mapToOrderResponse(saved); // ถ้ายังไม่มีเมธอดนี้ ให้ใส่ helper ด้านล่าง
+        return mapToOrderResponse(saved);
     }
+
     // --- ใช้แทน mapToOrderResponse เดิม ---
     // ===== Helper: map Order -> OrderResponse =====
     private OrderResponse mapToOrderResponse(Order o) {
@@ -404,6 +409,7 @@ public class OrderService {
                 o.getPromptpayQrUrl(),
                 o.getExpiresAt(),
                 o.getPaymentSlipUrl(),
+                o.getStatusNote(),
                 o.getCreatedAt(),
                 o.getUpdatedAt()
         );
@@ -420,5 +426,11 @@ public class OrderService {
             } catch (Exception ignored) { /* ข้ามไปชื่อถัดไป */ }
         }
         return 0;
+    }
+
+    private static String safeNote(String note) {
+        if (note == null) return null;
+        String n = note.trim();
+        return n.isEmpty() ? null : n;
     }
 }

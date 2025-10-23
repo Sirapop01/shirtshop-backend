@@ -21,6 +21,7 @@ public record OrderResponse(
         String promptpayQrUrl,
         Instant expiresAt,
         String paymentSlipUrl,
+        String statusNote,
         Instant createdAt,
         Instant updatedAt
 ) {}

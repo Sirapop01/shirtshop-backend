@@ -40,5 +40,6 @@ public class Order {
     private Instant verifiedAt;    // เวลาอนุมัติ/ปฏิเสธ
     private boolean stockAdjusted; // true เมื่อเคยตัดสต๊อกสำเร็จ
     private boolean stockRestored; // true เมื่อเคยคืนสต๊อกสำเร็จ
+    private String statusNote;
 
 }

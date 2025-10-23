@@ -43,8 +43,8 @@ public class AdminOrderController {
     @PatchMapping(value = "/{orderId}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
     public OrderResponse changeStatus(@PathVariable String orderId,
                                       @RequestBody @Valid UpdateOrderStatusRequest req) {
-        // ดึง adminId จาก token ก็ได้; ตอนนี้ส่ง "ADMIN" ไปก่อน
-        return orderService.adminChangeStatus(orderId, req.status().name(), "ADMIN", req.rejectReason());
-
+        String adminId = "ADMIN"; // TODO: ดึงจาก SecurityContext จริง
+        // ส่ง enum + note เข้าบริการ
+        return orderService.adminChangeStatus(orderId, req.status(), adminId, req.note());
     }
 }
