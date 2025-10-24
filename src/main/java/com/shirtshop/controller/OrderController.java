@@ -14,14 +14,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-
 import org.springframework.data.domain.Pageable;
+
 import java.util.List;
 
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/orders")
 @CrossOrigin
+@RequiredArgsConstructor
 public class OrderController {
 
     private final OrderService orderService;
@@ -32,7 +32,6 @@ public class OrderController {
         return ResponseEntity.ok(orderService.createPromptPayOrder(req));
     }
 
-
     /** ดึงรายละเอียดออเดอร์ตาม id (รับเฉพาะ 24 ตัวอักษร hex) */
     @GetMapping("/{id:[a-f0-9]{24}}")
     public ResponseEntity<OrderResponse> getOrder(@PathVariable String id) {
@@ -40,20 +39,17 @@ public class OrderController {
     }
 
     /** รายการออเดอร์ของผู้ใช้ปัจจุบัน (มีกรองสถานะ + เพจได้) */
-    @GetMapping("/my") // สมมติว่าเป็น endpoint นี้
+    @GetMapping("/my")
     public ResponseEntity<OrderListResponse> listMyOrders(
             @RequestParam(required = false) List<OrderStatus> statuses,
-            Pageable pageable) { // ไม่ต้องมี @PageableDefault ก็ได้ถ้าตั้งค่า default ใน service
+            Pageable pageable) {
 
         String userId = ((User) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
-
-        // ✅ ส่ง Pageable object ไปทั้งก้อนเลย
         OrderListResponse response = orderService.listMyOrders(userId, statuses, pageable);
-
         return ResponseEntity.ok(response);
     }
 
-    /** อัปสลิปแนบการโอน */
+    /** อัปโหลดสลิปแนบการโอน */
     @PostMapping("/{id:[a-f0-9]{24}}/slip")
     public ResponseEntity<OrderResponse> uploadSlip(
             @PathVariable String id,
@@ -62,11 +58,10 @@ public class OrderController {
         return ResponseEntity.ok(orderService.uploadSlip(id, file));
     }
 
+    /** คืนสินค้าเข้าตะกร้าจากออเดอร์ */
     @PostMapping("/{id:[a-f0-9]{24}}/restore-cart")
     public ResponseEntity<Void> restoreCartFromOrder(@PathVariable String id) {
         orderService.restoreCartFromOrder(id);
-        return ResponseEntity.ok().build(); // ส่งกลับ 200 OK เพื่อบอกว่าทำสำเร็จแล้ว
+        return ResponseEntity.ok().build();
     }
-
-
 }
