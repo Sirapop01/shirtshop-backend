@@ -1,4 +1,3 @@
-// src/main/java/com/shirtshop/dto/OrderResponse.java
 package com.shirtshop.dto;
 
 import com.shirtshop.entity.OrderStatus;
@@ -11,7 +10,7 @@ import java.util.Map;
 public record OrderResponse(
         String id,
         String userId,
-        List<Map<String,Object>> items,
+        List<Map<String, Object>> items,
         int subTotal,
         int shippingFee,
         int total,
@@ -21,6 +20,16 @@ public record OrderResponse(
         String promptpayQrUrl,
         Instant expiresAt,
         String paymentSlipUrl,
+
+        // 🔹 เพิ่มใหม่
+        String addressId,
+        Map<String, Object> address,
+
+        // tracking / note
+        String trackingTag,
+        Instant trackingCreatedAt,
+        String statusNote,
+
         Instant createdAt,
         Instant updatedAt
 ) {}

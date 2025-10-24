@@ -19,11 +19,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.lang.reflect.Method;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.lang.reflect.Method;
 
 @Service
 @RequiredArgsConstructor
@@ -42,6 +44,8 @@ public class OrderService {
     @Value("${app.payment.promptpay.expire-minutes:1}")
     private int expireMinutes;
 
+    /* ===================== Common ===================== */
+
     private String currentUserId() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         Object p = (auth != null ? auth.getPrincipal() : null);
@@ -51,11 +55,29 @@ public class OrderService {
         throw new IllegalStateException("Unauthenticated");
     }
 
+    /** สร้างเลขติดตามอ่านง่าย เช่น SHP-20251023-EE85CFA4 */
+    private String generateTrackingTag(Order o) {
+        String tail = (o.getId() != null && o.getId().length() >= 8)
+                ? o.getId().substring(o.getId().length() - 8).toUpperCase()
+                : Long.toHexString(System.nanoTime()).toUpperCase().replaceAll("[^A-Z0-9]", "").substring(0, 8);
+
+        String ymd = LocalDate.now(ZoneId.of("Asia/Bangkok"))
+                .format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE); // yyyyMMdd
+
+        return "SHP-" + ymd + "-" + tail;
+    }
+
+    private static String safeNote(String note) {
+        if (note == null) return null;
+        String n = note.trim();
+        return n.isEmpty() ? null : n;
+    }
+
+    /* =============== Scheduled cleanup =============== */
     @Scheduled(fixedRate = 30000)
     public void cleanupExpiredOrders() {
         log.info("Running scheduled job: Cleaning up expired orders...");
 
-        // 1. ค้นหาออเดอร์ทั้งหมดในระบบที่สถานะเป็น PENDING_PAYMENT และหมดอายุแล้ว
         List<Order> expiredOrders = orderRepo.findByStatusAndExpiresAtBefore(
                 OrderStatus.PENDING_PAYMENT,
                 Instant.now()
@@ -66,76 +88,90 @@ public class OrderService {
             return;
         }
 
-        // 2. อัปเดตสถานะของออเดอร์ทั้งหมดที่พบ
         log.info("Found {} expired orders. Updating status to EXPIRED.", expiredOrders.size());
         for (Order order : expiredOrders) {
             order.setStatus(OrderStatus.EXPIRED);
             order.setUpdatedAt(Instant.now());
 
-            // deduct stock once when slip uploaded
-            inventoryService.deductOnSlipUploaded(order);
+            // หมายเหตุ: ตรรกะธุรกิจขึ้นกับระบบคุณ
+            // ที่คุณมีอยู่ก่อนหน้า: deduct stock once when slip uploaded
+            // กรณี EXPIRED ควรคืนสต๊อกหรือไม่? (แล้วแต่กติกา)
+            // ที่นี่ผมไม่ไปยุ่งเพิ่ม
         }
 
-        // 3. บันทึกการเปลี่ยนแปลงลงฐานข้อมูล
         orderRepo.saveAll(expiredOrders);
         log.info("Successfully updated {} expired orders.", expiredOrders.size());
     }
 
+    /* =============== Create Order (PromptPay) =============== */
+
+    // REPLACE ทั้งเมธอดนี้
     public CreateOrderResponse createPromptPayOrder(CreateOrderRequest req) {
         String userId = currentUserId();
 
-        var openSt = List.of(OrderStatus.PENDING_PAYMENT, OrderStatus.SLIP_UPLOADED);
-        // Fix: ส่ง Instant.now() เข้าไปใน query ให้ตรงกับ Repository
-        var existing = orderRepo.findTopByUserIdAndStatusInAndExpiresAtAfterOrderByCreatedAtDesc(
-                userId, openSt, Instant.now());
-        if (existing.isPresent()) {
-            var o = existing.get();
-            return new CreateOrderResponse(
-                    o.getId(), o.getTotal(), o.getPromptpayTarget(), o.getPromptpayQrUrl(), o.getExpiresAt()
-            );
+        // ===== 1) โหลด Address และทำ snapshot =====
+        if (req.addressId() == null || req.addressId().isBlank()) {
+            throw new IllegalArgumentException("addressId is required");
         }
+        var address = addressRepo.findById(req.addressId())
+                .orElseThrow(() -> new IllegalArgumentException("Address not found: " + req.addressId()));
 
+        Order.ShippingAddress snap = new Order.ShippingAddress();
+        snap.setRecipientName(tryStr(address, "getRecipientName", "getFullName", "getName"));
+        snap.setPhone(tryStr(address, "getPhone", "getTel", "getMobile"));
+        snap.setLine1(tryStr(address, "getLine1", "getAddressLine1", "getAddress1", "getLineOne"));
+        snap.setLine2(tryStr(address, "getLine2", "getAddressLine2", "getAddress2", "getLineTwo"));
+        snap.setSubDistrict(tryStr(address, "getSubDistrict", "getSubdistrict", "getTambon"));
+        snap.setDistrict(tryStr(address, "getDistrict", "getAmphur", "getCity"));
+        snap.setProvince(tryStr(address, "getProvince", "getState"));
+        snap.setPostcode(tryStr(address, "getPostcode", "getZip", "getPostalCode"));
+
+        // owner ของ address (ใช้เป็นกุญแจสำรองตอนค้น cart)
+        String addrUserId = tryStr(address, "getUserId", "getUserid", "getOwnerId");
+
+        // ===== 2) หา Cart แบบ "ห้ามสร้างใหม่" =====
         var cart = cartRepo.findByUserId(userId)
+                .or(() -> Optional.ofNullable(addrUserId).flatMap(cartRepo::findByUserId))
                 .orElseThrow(() -> new IllegalStateException("Cart not found"));
+
         if (cart.getItems() == null || cart.getItems().isEmpty()) {
             throw new IllegalStateException("Cart is empty");
         }
 
-        int sub = cart.getItems().stream()
-                .mapToInt(it -> it.getUnitPrice() * it.getQuantity())
-                .sum();
-        Integer shipObj = cart.getShippingFee();
-        int shipping = shipObj != null ? shipObj : 0;
-        int total = sub + shipping;
-        if (total <= 0) throw new IllegalStateException("Invalid order total: " + total);
+        // ===== 3) map cart -> order items (คงเดิม) =====
+        List<OrderItem> orderItems = cart.getItems().stream().map(ci -> {
+            OrderItem it = new OrderItem();
+            it.setProductId(ci.getProductId());
 
+            // ✅ ดึงชื่อแบบ fallback: name -> productName -> title
+            String itemName = tryStr(ci, "getName", "getProductName", "getTitle");
+            it.setName(itemName);
+
+            it.setImageUrl(ci.getImageUrl());
+            it.setUnitPrice((int) ci.getUnitPrice());
+            it.setColor(ci.getColor());
+            it.setSize(ci.getSize());
+            it.setQuantity(ci.getQuantity());
+            return it;
+        }).collect(Collectors.toList());
+
+
+        int subTotal = orderItems.stream().mapToInt(i -> i.getUnitPrice() * i.getQuantity()).sum();
+        int shippingFee = 0; // ปรับตามลอจิกเดิม
+        int total = subTotal + shippingFee;
+
+        // ===== 4) build order (คงเดิม) =====
         Instant now = Instant.now();
+        Instant expiresAt = now.plus(expireMinutes, ChronoUnit.MINUTES);
+
         Order order = new Order();
         order.setUserId(userId);
+        order.setItems(orderItems);
+        order.setSubTotal(subTotal);
+        order.setShippingFee(shippingFee);
+        order.setTotal(total);
         order.setPaymentMethod(PaymentMethod.PROMPTPAY);
         order.setStatus(OrderStatus.PENDING_PAYMENT);
-        order.setCreatedAt(now);
-        order.setUpdatedAt(now);
-        order.setExpiresAt(now.plus(expireMinutes, ChronoUnit.MINUTES));
-        order.setSubTotal(sub);
-        order.setShippingFee(shipping);
-        order.setTotal(total);
-
-        var items = cart.getItems().stream().map(ci -> {
-            OrderItem oi = new OrderItem();
-            oi.setProductId(ci.getProductId());
-            String name = (ci.getProductName() != null && !ci.getProductName().isBlank())
-                    ? ci.getProductName()
-                    : ci.getName();
-            oi.setName(name);
-            oi.setImageUrl(ci.getImageUrl());
-            oi.setUnitPrice(ci.getUnitPrice());
-            oi.setColor(ci.getColor());
-            oi.setSize(ci.getSize());
-            oi.setQuantity(ci.getQuantity());
-            return oi;
-        }).collect(Collectors.toList());
-        order.setItems(items);
 
         order.setPromptpayTarget(promptpayTarget);
         try {
@@ -146,11 +182,21 @@ public class OrderService {
             order.setPromptpayQrUrl("https://promptpay.io/" + promptpayTarget + ".png?amount=" + amt + "&size=360");
         }
 
+        order.setCreatedAt(now);
+        order.setUpdatedAt(now);
+        order.setExpiresAt(expiresAt);
+
+        // ===== 5) แนบ Address ใส่ Order =====
+        order.setAddressId(req.addressId());
+        order.setShippingAddress(snap);
+
+        order.setStockAdjusted(false);
+        order.setStockRestored(false);
+
         order = orderRepo.save(order);
 
-        cart.setItems(new ArrayList<>());
-        cart.setShippingFee(0);
-        cart.setUpdatedAt(Instant.now());
+        // ===== 6) เคลียร์ตะกร้า (คงเดิม) =====
+        cart.getItems().clear();
         cartRepo.save(cart);
 
         return new CreateOrderResponse(
@@ -162,9 +208,11 @@ public class OrderService {
         );
     }
 
+    /* =============== User actions =============== */
+
     public OrderResponse getOrder(String id) {
         var o = orderRepo.findById(id).orElseThrow(() -> new IllegalStateException("Order not found"));
-        return toResponse(o);
+        return mapToOrderResponse(o);
     }
 
     public OrderResponse uploadSlip(String orderId, MultipartFile slip) {
@@ -183,105 +231,93 @@ public class OrderService {
         order.setStatus(OrderStatus.SLIP_UPLOADED);
         order.setUpdatedAt(Instant.now());
 
-        // deduct stock once when slip uploaded
+        // คุณมีตรรกะ: ตัดสต็อกตอน slip uploaded (ครั้งเดียว)
         inventoryService.deductOnSlipUploaded(order);
 
         order = orderRepo.save(order);
-        return toResponse(order);
+        return mapToOrderResponse(order);
     }
 
-    private OrderResponse toResponse(Order o) {
-        // แปลงรายการสินค้า (items) โดยมีการป้องกันค่า null
-        var items = o.getItems().stream().map(it ->
-                // ใช้วิธีตรวจสอบค่า null ก่อนส่งเข้า Map.of()
-                // เพื่อป้องกัน NullPointerException
-                Map.<String, Object>of(
-                        "productId", it.getProductId() != null ? it.getProductId() : "",
-                        "name", it.getName() != null ? it.getName() : "Unknown Product", // ใส่ค่าเริ่มต้นเผื่อชื่อเป็น null
-                        "imageUrl", it.getImageUrl() != null ? it.getImageUrl() : "",
-                        "unitPrice", it.getUnitPrice(), // สมมติว่า int/Integer ไม่เป็น null
-                        "color", it.getColor() != null ? it.getColor() : "",
-                        "size", it.getSize() != null ? it.getSize() : "",
-                        "quantity", it.getQuantity() // สมมติว่า int/Integer ไม่เป็น null
-                )
-        ).collect(Collectors.toList());
-
-        // สร้างและส่งคืน OrderResponse DTO
-        // (ตรวจสอบให้แน่ใจว่า Constructor ของ OrderResponse ตรงกับพารามิเตอร์เหล่านี้)
-        return new OrderResponse(
-                o.getId(),
-                o.getUserId(),
-                items,
-                o.getSubTotal(),
-                o.getShippingFee(),
-                o.getTotal(),
-                o.getPaymentMethod(),
-                o.getStatus(),
-                o.getPromptpayTarget(),
-                o.getPromptpayQrUrl(),
-                o.getExpiresAt(),
-                o.getPaymentSlipUrl(),
-                o.getCreatedAt(),
-                o.getUpdatedAt()
-        );
-    }
+    /* =============== List my orders =============== */
 
     public OrderListResponse listMyOrders(String userId, List<OrderStatus> statuses, Pageable pageable) {
-
-        Page<Order> pg; // ประกาศตัวแปร Page
+        Page<Order> pg;
         if (statuses == null || statuses.isEmpty()) {
-            // ✅ เรียก Repository โดยส่ง Pageable ไปตรงๆ
             pg = orderRepo.findByUserId(userId, pageable);
         } else {
-            // ✅ เรียก Repository โดยส่ง Pageable ไปตรงๆ
             pg = orderRepo.findByUserIdAndStatusIn(userId, statuses, pageable);
         }
 
-        // แปลง Page<Order> เป็น List<OrderResponse>
         var items = pg.getContent().stream()
-                .map(this::toResponse)
+                .map(this::mapToOrderResponse)
                 .toList();
 
-        // ✅ สร้าง OrderListResponse จากข้อมูลใน Page object
         return new OrderListResponse(
                 items,
-                pg.getNumber(),      // ดึง page number จาก Page object
-                pg.getSize(),        // ดึง page size จาก Page object
+                pg.getNumber(),
+                pg.getSize(),
                 pg.getTotalElements(),
                 pg.getTotalPages()
         );
     }
 
-    public void restoreCartFromOrder(String orderId) {
-        // 1. ดึง ID ของผู้ใช้ปัจจุบันจาก Security Context
-        String userId = currentUserId();
+    // เรียกจาก AdminOrderController.list(...)
+    public OrderListResponse adminList(String keyword,
+                                       java.util.List<OrderStatus> statuses,
+                                       org.springframework.data.domain.Pageable pageable) {
+        // ดึงจาก DB ตามเพจ (ถ้าไม่มีเมธอดเฉพาะใน repo ใช้ findAll ไปก่อน)
+        var page = orderRepo.findAll(pageable);
 
-        // 2. ค้นหาออเดอร์จาก ID ที่ได้รับมา ถ้าไม่เจอให้โยน Exception
+        // กรองในเมมโมรี่ (ง่ายและเร็วในการต่อ FE — ค่อย optimize ภายหลังได้)
+        var filtered = page.getContent().stream()
+                .filter(o -> (statuses == null || statuses.isEmpty()) || statuses.contains(o.getStatus()))
+                .filter(o -> {
+                    if (keyword == null || keyword.isBlank()) return true;
+                    var k = keyword.toLowerCase();
+                    return (o.getId() != null && o.getId().toLowerCase().contains(k))
+                            || (o.getUserId() != null && o.getUserId().toLowerCase().contains(k))
+                            || (o.getTrackingTag() != null && o.getTrackingTag().toLowerCase().contains(k))
+                            || (o.getStatusNote() != null && o.getStatusNote().toLowerCase().contains(k));
+                })
+                .toList();
+
+        var data = filtered.stream().map(this::mapToOrderResponse).toList();
+        var newPage = new org.springframework.data.domain.PageImpl<>(data, pageable, data.size());
+
+        return new OrderListResponse(
+                newPage.getContent(),
+                newPage.getNumber(),
+                newPage.getSize(),
+                newPage.getTotalElements(),
+                newPage.getTotalPages()
+        );
+    }
+
+
+    /* =============== Restore cart from order =============== */
+
+    public void restoreCartFromOrder(String orderId) {
+        String userId = currentUserId();
         Order order = orderRepo.findById(orderId)
                 .orElseThrow(() -> new IllegalStateException("Order not found with id: " + orderId));
 
-        // 3. ตรวจสอบความเป็นเจ้าของออเดอร์
         if (!order.getUserId().equals(userId)) {
             throw new IllegalStateException("Forbidden: User does not own this order");
         }
 
-        // 4. ตรวจสอบสถานะของออเดอร์ว่าสามารถกู้คืนได้หรือไม่
         if (!(order.getStatus() == OrderStatus.EXPIRED || order.getStatus() == OrderStatus.REJECTED)) {
             throw new IllegalStateException("Only EXPIRED or REJECTED orders can be restored. Current status: " + order.getStatus());
         }
 
-        // 5. ดึงตะกร้าสินค้าปัจจุบันของผู้ใช้ หรือสร้างใหม่ถ้ายังไม่มี
         Cart cart = cartRepo.findByUserId(userId)
                 .orElseGet(() -> {
-                    Cart newCart = new Cart();
-                    newCart.setUserId(userId);
-                    newCart.setItems(new ArrayList<>());
-                    newCart.setCreatedAt(Instant.now());
-                    return newCart;
+                    Cart c = new Cart();
+                    c.setUserId(userId);
+                    c.setItems(new ArrayList<>());
+                    c.setCreatedAt(Instant.now());
+                    return c;
                 });
 
-        // 6. แปลง OrderItems จากออเดอร์กลับไปเป็น CartItems
-        // (เราจะสร้าง List ใหม่ เพื่อไม่ให้กระทบกับ List เดิมในตะกร้า)
         List<CartItem> itemsToRestore = order.getItems().stream()
                 .map(orderItem -> {
                     CartItem cartItem = new CartItem();
@@ -296,120 +332,140 @@ public class OrderService {
                 })
                 .collect(Collectors.toList());
 
-        // 7. ตั้งค่ารายการสินค้าใหม่ให้กับตะกร้า (เขียนทับของเดิม)
         cart.setItems(itemsToRestore);
-
-        // 8. คำนวณยอดรวมใหม่ (ถ้ามีตรรกะนี้อยู่) และอัปเดตเวลา
-        // recalc(cart); // หากคุณมีเมธอด recalc() ใน CartService ก็สามารถเรียกใช้ได้
         cart.setUpdatedAt(Instant.now());
-
-        // 9. บันทึกตะกร้าที่อัปเดตแล้วลงฐานข้อมูล
         cartRepo.save(cart);
     }
 
-    // === Admin: list orders ===
+    /* =============== Admin list =============== */
+
     public Page<Order> adminListOrders(OrderStatus status, Pageable pageable) {
         if (status == null) {
-            // ทั้งหมด
             return orderRepo.findAll(pageable);
         }
-        // กรองตามสถานะ
         return orderRepo.findAllByStatus(status, pageable);
     }
 
-    // === Admin: approve / reject ===
-    // ----- วางทับ/เพิ่มเมธอดนี้ในคลาส OrderService -----
-    public OrderResponse adminChangeStatus(String orderId, String actionRaw, String note, String s) {
+    /* =============== Admin change status (Approve/Reject/Cancel) =============== */
+
+    public OrderResponse adminChangeStatus(String orderId,
+                                           OrderStatus newStatus,
+                                           String adminId,
+                                           String note) {
+
         Order order = orderRepo.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
 
-        String action = actionRaw == null ? "" : actionRaw.trim().toUpperCase();
+        if (newStatus == null) {
+            throw new IllegalArgumentException("Status is required");
+        }
 
-        switch (action) {
-
-            // อนุมัติ: รองรับทั้ง APPROVE, APPROVED, PAID
-            case "APPROVE", "APPROVED", "PAID" -> {
+        switch (newStatus) {
+            case PAID -> {
+                // อนุมัติได้ก็ต่อเมื่อเคยอัปสลิปแล้ว
                 if (order.getStatus() != OrderStatus.SLIP_UPLOADED) {
-                    throw new IllegalArgumentException("Only SLIP_UPLOADED can be approved");
+                    throw new IllegalArgumentException("Only SLIP_UPLOADED can be approved (to PAID)");
                 }
-                order.setStatus(OrderStatus.PAID);   // ไม่ตัดสต๊อกซ้ำ
+                order.setStatus(OrderStatus.PAID);
+                order.setStatusNote(null); // ไม่ต้องมีเหตุผล
+
+                // สร้าง Tracking Tag ถ้ายังไม่มี
+                if (order.getTrackingTag() == null || order.getTrackingTag().isBlank()) {
+                    order.setTrackingTag(generateTrackingTag(order));
+                    order.setTrackingCreatedAt(Instant.now());
+                }
+
                 order.setUpdatedAt(Instant.now());
             }
 
-            // ปฏิเสธ: รองรับทั้ง REJECT, REJECTED
-            case "REJECT", "REJECTED" -> {
+            case REJECTED -> {
                 if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
                     throw new IllegalArgumentException("Order already closed");
                 }
                 inventoryService.restoreOnClosed(order); // คืนสต๊อก
                 order.setStatus(OrderStatus.REJECTED);
+                order.setStatusNote(safeNote(note));     // เก็บเหตุผลปฏิเสธ
                 order.setUpdatedAt(Instant.now());
             }
 
-            // ยกเลิก: รองรับทั้ง CANCEL, CANCELED
-            case "CANCEL", "CANCELED" -> {
+            case CANCELED -> {
                 if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
                     throw new IllegalArgumentException("Order already closed");
                 }
                 inventoryService.restoreOnClosed(order); // คืนสต๊อก
                 order.setStatus(OrderStatus.CANCELED);
+                order.setStatusNote(safeNote(note));     // เก็บเหตุผลยกเลิก
                 order.setUpdatedAt(Instant.now());
             }
 
-            default -> throw new IllegalArgumentException("Unsupported action: " + actionRaw);
+            default -> throw new IllegalArgumentException("Unsupported status: " + newStatus);
         }
-
 
         Order saved = orderRepo.save(order);
-        return mapToOrderResponse(saved); // ถ้ายังไม่มีเมธอดนี้ ให้ใส่ helper ด้านล่าง
+        return mapToOrderResponse(saved);
     }
-    // --- ใช้แทน mapToOrderResponse เดิม ---
-    // ===== Helper: map Order -> OrderResponse =====
+
+    /* =============== Mapping =============== */
+
+    // REPLACE เมธอด map เป็นแบบนี้ (ชื่อเมธอดให้ใช้ชื่อเดิมของโปรเจ็กต์คุณ)
     private OrderResponse mapToOrderResponse(Order o) {
-        // 1) แปลงรายการสินค้า: ใช้ฟิลด์จาก OrderItem ของคุณโดยตรง
-        List<Map<String, Object>> itemsPayload = new ArrayList<>();
-        if (o.getItems() != null) {
-            for (OrderItem it : o.getItems()) {
-                Map<String, Object> m = new HashMap<>();
-                m.put("productId", it.getProductId());
-                m.put("name", it.getName());
-                m.put("imageUrl", it.getImageUrl());
-                m.put("color", it.getColor());
-                m.put("size", it.getSize());
-                m.put("quantity", it.getQuantity());
-                m.put("unitPrice", it.getUnitPrice());
-                itemsPayload.add(m);
-            }
+        List<Map<String, Object>> itemsPayload = o.getItems() == null ? List.of() :
+                o.getItems().stream().map(it -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("productId", it.getProductId());
+                    m.put("name", it.getName());
+                    m.put("imageUrl", it.getImageUrl());
+                    m.put("unitPrice", it.getUnitPrice());
+                    m.put("color", it.getColor());
+                    m.put("size", it.getSize());
+                    m.put("quantity", it.getQuantity());
+                    return m;
+                }).toList();
+
+        // [ADD] address payload
+        Map<String, Object> addrPayload = null;
+        Order.ShippingAddress sa = o.getShippingAddress();
+        if (sa != null) {
+            addrPayload = new LinkedHashMap<>();
+            addrPayload.put("recipientName", sa.getRecipientName());
+            addrPayload.put("phone", sa.getPhone());
+            addrPayload.put("line1", sa.getLine1());
+            addrPayload.put("line2", sa.getLine2());
+            addrPayload.put("subDistrict", sa.getSubDistrict());
+            addrPayload.put("district", sa.getDistrict());
+            addrPayload.put("province", sa.getProvince());
+            addrPayload.put("postcode", sa.getPostcode());
         }
 
-        // 2) ยอดรวมต่าง ๆ (กันชื่อเมธอดไม่ตรงด้วย reflection แบบปลอดภัย)
-        int subTotal    = tryInt(o, "getSubTotal", "getSubtotal"); // มีอันไหนใช้ได้ก็จะได้ค่า
-        int shippingFee = tryInt(o, "getShippingFee");
-        int total       = tryInt(o, "getTotal");
-        if (total == 0 && (subTotal != 0 || shippingFee != 0)) {
-            total = subTotal + shippingFee;
-        }
-
-        // 3) สร้าง record OrderResponse ตามลำดับพารามิเตอร์จริงของคุณ
         return new OrderResponse(
                 o.getId(),
                 o.getUserId(),
                 itemsPayload,
-                subTotal,
-                shippingFee,
-                total,
+                o.getSubTotal(),
+                o.getShippingFee(),
+                o.getTotal(),
                 o.getPaymentMethod(),
                 o.getStatus(),
                 o.getPromptpayTarget(),
                 o.getPromptpayQrUrl(),
                 o.getExpiresAt(),
                 o.getPaymentSlipUrl(),
+
+                // [ADD] ส่งที่อยู่กลับ FE
+                o.getAddressId(),
+                addrPayload,
+
+                o.getTrackingTag(),
+                o.getTrackingCreatedAt(),
+                o.getStatusNote(),
                 o.getCreatedAt(),
                 o.getUpdatedAt()
         );
     }
 
-    /* ---------- helpers สำหรับข้อ 2 (reflection เฉพาะยอดรวม) ---------- */
+
+    /* =============== Utils =============== */
+
     private static int tryInt(Object target, String... methodNames) {
         if (target == null) return 0;
         for (String name : methodNames) {
@@ -417,8 +473,22 @@ public class OrderService {
                 Method m = target.getClass().getMethod(name);
                 Object v = m.invoke(target);
                 if (v instanceof Number n) return n.intValue();
-            } catch (Exception ignored) { /* ข้ามไปชื่อถัดไป */ }
+            } catch (Exception ignored) { /* next */ }
         }
         return 0;
     }
+
+    // ADD helper (ถ้ามีอยู่แล้วไม่ต้องเพิ่ม)
+    private static String tryStr(Object target, String... methodNames) {
+        if (target == null) return null;
+        for (String name : methodNames) {
+            try {
+                var m = target.getClass().getMethod(name);
+                var v = m.invoke(target);
+                if (v != null) return String.valueOf(v);
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
 }
