@@ -21,6 +21,8 @@ public class Address {
     private String subdistrict;   // ชื่อตำบล/แขวง
     private String district;      // amphure_id (string)
     private String province;      // province_id (string)
+    private String districtName;
+    private String provinceName;
     private String postalCode;
     private boolean isDefault;
 }

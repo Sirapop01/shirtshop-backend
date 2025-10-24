@@ -121,9 +121,21 @@ public class OrderService {
         snap.setPhone(tryStr(address, "getPhone", "getTel", "getMobile"));
         snap.setLine1(tryStr(address, "getLine1", "getAddressLine1", "getAddress1", "getLineOne"));
         snap.setLine2(tryStr(address, "getLine2", "getAddressLine2", "getAddress2", "getLineTwo"));
-        snap.setSubDistrict(tryStr(address, "getSubDistrict", "getSubdistrict", "getTambon"));
-        snap.setDistrict(tryStr(address, "getDistrict", "getAmphur", "getCity"));
-        snap.setProvince(tryStr(address, "getProvince", "getState"));
+        // ตำบลส่วนใหญ่เป็นชื่ออยู่แล้ว แต่เพิ่มตัวเลือก name ไว้ก่อน
+        snap.setSubDistrict(preferName(
+                tryStr(address, "getSubDistrictName", "getSubdistrictName", "getTambonName", "getSubDistrict", "getSubdistrict", "getTambon"),
+                tryStr(address, "getSubDistrictCode", "getSubdistrictCode")
+        ));
+        // ✅ เลือก "ชื่ออำเภอ" ก่อน ถ้าไม่ได้ค่อย fallback เป็นรหัส
+        snap.setDistrict(preferName(
+                tryStr(address, "getDistrictName", "getAmphurName", "getCityName", "getDistrictTh"),
+                tryStr(address, "getDistrict", "getAmphur", "getCity")
+        ));
+        // ✅ เลือก "ชื่อจังหวัด" ก่อน ถ้าไม่ได้ค่อย fallback เป็นรหัส
+        snap.setProvince(preferName(
+                tryStr(address, "getProvinceName", "getProvinceTh", "getStateName"),
+                tryStr(address, "getProvince", "getState")
+        ));
         snap.setPostcode(tryStr(address, "getPostcode", "getZip", "getPostalCode"));
 
         // owner ของ address (ใช้เป็นกุญแจสำรองตอนค้น cart)
@@ -142,11 +154,9 @@ public class OrderService {
         List<OrderItem> orderItems = cart.getItems().stream().map(ci -> {
             OrderItem it = new OrderItem();
             it.setProductId(ci.getProductId());
-
-            // ✅ ดึงชื่อแบบ fallback: name -> productName -> title
+            // ดึงชื่อแบบ fallback: name -> productName -> title
             String itemName = tryStr(ci, "getName", "getProductName", "getTitle");
             it.setName(itemName);
-
             it.setImageUrl(ci.getImageUrl());
             it.setUnitPrice((int) ci.getUnitPrice());
             it.setColor(ci.getColor());
@@ -155,9 +165,8 @@ public class OrderService {
             return it;
         }).collect(Collectors.toList());
 
-
         int subTotal = orderItems.stream().mapToInt(i -> i.getUnitPrice() * i.getQuantity()).sum();
-        int shippingFee = 0; // ปรับตามลอจิกเดิม
+        int shippingFee = 0; // ปรับตามลอจิกเดิมของคุณ
         int total = subTotal + shippingFee;
 
         // ===== 4) build order (คงเดิม) =====
@@ -207,6 +216,7 @@ public class OrderService {
                 order.getExpiresAt()
         );
     }
+
 
     /* =============== User actions =============== */
 
@@ -490,5 +500,19 @@ public class OrderService {
         }
         return null;
     }
+
+    private static boolean isDigits(String s) {
+        if (s == null) return false;
+        for (int i = 0; i < s.length(); i++) if (!Character.isDigit(s.charAt(i))) return false;
+        return s.length() > 0;
+    }
+
+    /** เลือก name ก่อนถ้าเป็น "คำ" (ไม่ใช่ตัวเลขล้วน) ไม่งั้น fallback เป็น code */
+    private static String preferName(String name, String code) {
+        if (name != null && !name.isBlank() && !isDigits(name)) return name;
+        if (code != null && !code.isBlank() && !isDigits(code)) return code;
+        return (name != null && !name.isBlank()) ? name : code;
+    }
+
 
 }
