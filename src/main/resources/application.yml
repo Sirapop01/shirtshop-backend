@@ -1,0 +1,83 @@
+server:
+  forward-headers-strategy: framework
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+spring:
+  data:
+    mongodb:
+      # MongoDB Atlas URI
+      uri: ${SPRING_DATA_MONGODB_URI}
+  servlet:
+    multipart:
+      max-file-size: ${MAX_FILE_SIZE:10MB}
+      max-request-size: ${MAX_REQUEST_SIZE:10MB}
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            scope: openid, profile, email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          facebook:
+            client-id: ${FACEBOOK_CLIENT_ID:}
+            client-secret: ${FACEBOOK_CLIENT_SECRET:}
+            scope: public_profile, email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          facebook:
+            authorization-uri: https://www.facebook.com/v19.0/dialog/oauth
+            token-uri: https://graph.facebook.com/v19.0/oauth/access_token
+            user-info-uri: https://graph.facebook.com/me?fields=id,name,email,picture
+
+springdoc:
+  api-docs.path: /v3/api-docs
+  swagger-ui.path: /swagger-ui
+
+app:
+  jwt:
+    access-secret: ${JWT_ACCESS_SECRET:DEMO_ACCESS_SECRET_MIN_32_BYTES________________________________}
+    refresh-secret: ${JWT_REFRESH_SECRET:DEMO_REFRESH_SECRET_MIN_32_BYTES_______________________________}
+    access-expiration-ms: ${JWT_ACCESS_EXPIRE_MS:900000}
+    refresh-expiration-ms: ${JWT_REFRESH_EXPIRE_MS:604800000}
+  security:
+    cors:
+      allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+    api-key: ${CLOUDINARY_API_KEY:}
+    api-secret: ${CLOUDINARY_API_SECRET:}
+    default-folder: ${CLOUDINARY_FOLDER:shirtshop}
+  oauth2:
+    redirect-uris:
+      success: ${OAUTH2_SUCCESS_URL:http://localhost:3000/login}
+      failure: ${OAUTH2_FAILURE_URL:http://localhost:3000/login}
+  frontend:
+    callback-url: ${FRONTEND_CALLBACK_URL:http://localhost:3000/login}
+
+  payment:
+    promptpay:
+      target: ${PROMPTPAY_TARGET:0952544014}
+      expire-minutes: ${PROMPTPAY_EXPIRE_MINUTES:1}
+
+ml:
+  gradio:
+    base-url: ${ML_BASE_URL:}
+    endpoint: ${ML_ENDPOINT:/api/tryon}
+    mode: ${ML_MODE:json}
+    description: ${ML_DESCRIPTION:Short Sleeve Round Neck T-shirts}
+    is-checked: ${ML_IS_CHECKED:true}
+    is-checked-crop: ${ML_IS_CHECKED_CROP:false}
+    denoise-steps: ${ML_DENOISE_STEPS:30}
+    seed: ${ML_SEED:42}
