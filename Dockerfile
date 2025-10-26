@@ -13,7 +13,7 @@ RUN mvn -B -DskipTests package
 # ---------- Run stage ----------
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-ENV JAVA_OPTS="-Xms256m -Xmx768m" \
+ENV JAVA_OPTS="-Xms128m -Xmx384m"
     PORT=8080 \
     SPRING_PROFILES_ACTIVE=prod
 COPY --from=build /app/target/shirtshop-backend.jar app.jar
