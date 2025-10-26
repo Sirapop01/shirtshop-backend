@@ -20,6 +20,22 @@ public class CustomerAdminService {
 
     private final UserRepository userRepository;
 
+    /** ✅ สำหรับ Dashboard: รวมจำนวนลูกค้าทั้งหมด */
+    public long countAll() {
+        return userRepository.count();
+    }
+
+    /** ✅ สำหรับ Dashboard: จำนวนลูกค้าที่ active (ถ้ามีฟิลด์ active) */
+    public long countActive() {
+        // ถ้าใน UserRepository มีเมธอดนี้อยู่แล้ว ใช้งานบรรทัดล่างได้เลย:
+        // return userRepository.countByActiveTrue();
+
+        // Fallback (ถ้ายังไม่มีเมธอดบน repository):
+        return userRepository.findAll().stream()
+                .filter(u -> Boolean.TRUE.equals(u.isActive()))
+                .count();
+    }
+
     /** ดึงลูกค้าทั้งหมด (สำหรับตารางรายชื่อ) */
     public List<CustomerItemResponse> getAllCustomers() {
         return userRepository.findAll()
@@ -49,7 +65,7 @@ public class CustomerAdminService {
                 .lastName(u.getLastName())
                 .phone(u.getPhone())
                 .profileImageUrl(u.getProfileImageUrl())
-                .roles(toRoleSet(u))                // ✅ ตรงกับ DTO ที่เป็น Set<String>
+                .roles(toRoleSet(u))                // Set<String>
                 .active(Boolean.TRUE.equals(u.isActive()))
                 .lastActive(u.getLastActive())
                 .createdAt(u.getCreatedAt())
@@ -83,7 +99,7 @@ public class CustomerAdminService {
                 .id(u.getId())
                 .name(name)
                 .email(u.getEmail())
-                .roles(toRoleSet(u))                // ✅ Set<String>
+                .roles(toRoleSet(u))                // Set<String>
                 .active(Boolean.TRUE.equals(u.isActive()))
                 .lastActive(u.getLastActive())
                 .build();
@@ -101,20 +117,15 @@ public class CustomerAdminService {
                 .phone(u.getPhone())
                 .profileImageUrl(u.getProfileImageUrl())
                 .emailVerified(u.isEmailVerified())
-                .roles(toRoleSet(u))                // ✅ Set<String>
+                .roles(toRoleSet(u))                // Set<String>
                 .active(Boolean.TRUE.equals(u.isActive()))
                 .lastActive(u.getLastActive())
                 .build();
     }
 
-    /**
-     * แปลง role ของ User ให้เป็น Set<String>
-     * - ใช้ LinkedHashSet เพื่อกำจัด duplicate และคงลำดับเดิม (ถ้ามี)
-     */
+    /** แปลง role ของ User ให้เป็น Set<String> */
     private Set<String> toRoleSet(User u) {
-        if (u.getRoles() == null) {
-            return Set.of();
-        }
+        if (u.getRoles() == null) return Set.of();
         return new LinkedHashSet<>(u.getRoles());
     }
 }

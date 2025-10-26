@@ -5,5 +5,6 @@ public enum OrderStatus {
     SLIP_UPLOADED,        // ลูกค้าอัปสลิปแล้ว
     PAID,                 // แอดมินยืนยันเรียบร้อย
     REJECTED,             // แอดมินปฏิเสธสลิป
-    EXPIRED               // หมดอายุการชำระ
+    EXPIRED,               // หมดอายุการชำระ
+    CANCELED
 }

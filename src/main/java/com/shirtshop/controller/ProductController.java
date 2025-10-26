@@ -2,6 +2,7 @@ package com.shirtshop.controller;
 
 import com.shirtshop.dto.ProductRequest;
 import com.shirtshop.dto.ProductResponse;
+import com.shirtshop.dto.TopProductResponse;
 import com.shirtshop.entity.Product;
 import com.shirtshop.mapper.ProductMapper;
 import com.shirtshop.service.ProductService;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/products")
@@ -27,17 +29,14 @@ public class ProductController {
             @RequestPart("product") ProductRequest productRequest,
             @RequestPart("images") List<MultipartFile> images) {
 
-        // ส่งต่อข้อมูลและไฟล์ทั้งหมดไปให้ ProductService จัดการ
         ProductResponse createdProduct = productService.createProduct(productRequest, images);
-
-        // ส่ง Response กลับไปพร้อมสถานะ 201 Created
         return new ResponseEntity<>(createdProduct, HttpStatus.CREATED);
     }
 
     @GetMapping
     public ResponseEntity<List<ProductResponse>> getAllProducts() {
         List<ProductResponse> products = productService.getAllProducts();
-        return ResponseEntity.ok(products); // ส่ง Response กลับไปพร้อมสถานะ 200 OK
+        return ResponseEntity.ok(products);
     }
 
     @GetMapping("/search")
@@ -46,23 +45,33 @@ public class ProductController {
         return ResponseEntity.ok(products);
     }
 
-    @GetMapping("/{id}")
+    /** ✅ ใหม่: Top products สำหรับ Dashboard (กันชนพาธ /{id}) */
+    @GetMapping("/top")
+    public ResponseEntity<List<TopProductResponse>> getTopProducts(
+            @RequestParam(defaultValue = "5") int limit,
+            @RequestParam(defaultValue = "today") String range
+    ) {
+        return ResponseEntity.ok(productService.getTopProducts(limit, range));
+    }
+
+    /** ✅ จำกัดพาธให้รับเฉพาะ ObjectId 24 ตัวฐานสิบหก */
+    @GetMapping("/{id:[a-f0-9]{24}}")
     public ResponseEntity<ProductResponse> getProductById(@PathVariable String id) {
-        Product product = productService.getById(id);   // 👈 ให้ service return Entity
-        ProductResponse response = ProductMapper.toResponse(product); // 👈 map เป็น DTO
+        Product product = productService.getById(id);
+        ProductResponse response = ProductMapper.toResponse(product);
         return ResponseEntity.ok(response);
     }
 
-
-
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')") // ตัวอย่างการป้องกัน: ให้ลบได้เฉพาะ Admin
+    /** ✅ จำกัดพาธให้รับเฉพาะ ObjectId 24 ตัวฐานสิบหก */
+    @DeleteMapping("/{id:[a-f0-9]{24}}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteProduct(@PathVariable String id) {
         productService.deleteProduct(id);
-        return ResponseEntity.noContent().build(); // คืนค่า 204 No Content
+        return ResponseEntity.noContent().build();
     }
 
-    @PutMapping(value = "/{id}", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
+    /** ✅ จำกัดพาธให้รับเฉพาะ ObjectId 24 ตัวฐานสิบหก */
+    @PutMapping(value = "/{id:[a-f0-9]{24}}", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProductResponse> updateProduct(
             @PathVariable String id,
@@ -79,5 +88,4 @@ public class ProductController {
         List<Product> products = productService.findByCategory(categoryName);
         return ResponseEntity.ok(products);
     }
-
 }
