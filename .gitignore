@@ -28,11 +28,3 @@ build/
 # --- Project files not needed ---
 HELP.md
 .mvn/wrapper/maven-wrapper.jar
-
-# --- Config / Secrets ---
-# ignore ไฟล์จริงที่มีความลับ
-/src/main/resources/application.yml
-/src/main/resources/application-local*.yml
-
-# allow ไฟล์ตัวอย่างให้ commit ได้
-!/src/main/resources/application-example.yml
