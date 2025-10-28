@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -20,10 +21,10 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    // ฟิลเตอร์ของคุณต้องเป็น @Component อยู่ในแพ็กเกจนี้แล้ว
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ActiveUserFilter activeUserFilter;
 
@@ -40,18 +41,15 @@ public class SecurityConfig {
                         .requestMatchers("/", "/error", "/favicon.ico").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
 
                         // ---------- Admin only ----------
-                        // จัดการสินค้า (เขียน/แก้/ลบ) ต้อง ADMIN เท่านั้น
                         .requestMatchers(HttpMethod.POST,   "/api/products").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,    "/api/products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/products/**").hasRole("ADMIN")
-                        // หน้า customers & dashboard สำหรับแอดมิน
                         .requestMatchers(HttpMethod.GET, "/api/customers/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/dashboard/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/customers/**").hasRole("ADMIN")
-
-                        // จัดการคำสั่งซื้อ (ดู/เปลี่ยนสถานะ) เฉพาะแอดมิน
                         .requestMatchers("/api/admin/orders/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET,   "/api/admin/orders/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/admin/orders/**").hasRole("ADMIN")
@@ -62,6 +60,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/cart/**").authenticated()
                         .requestMatchers("/api/orders/**").authenticated()
                         .requestMatchers("/api/addresses/**").authenticated()
+
+                        // ML try-on เปิด public
+                        .requestMatchers("/api/tryon").permitAll()
 
                         // ---------- Others ----------
                         .anyRequest().authenticated()
@@ -74,14 +75,38 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // CORS: FE http://localhost:3000
+    /**
+     * CORS แบบ Dev/Prod-friendly
+     * - ใช้ allowedOriginPatterns เพื่อรองรับ wildcard + credentials
+     * - ถ้ารู้ origin แน่ชัดใน prod แนะนำล็อกโดเมนให้แคบลง
+     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOrigins(List.of("http://localhost:3000","https://shirtshop-frontend.vercel.app"));
+
+        // ✅ รองรับหลายสภาพแวดล้อม (แก้/ลบได้ตามจริงของคุณ)
+        cfg.setAllowedOriginPatterns(List.of(
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "https://*.vercel.app",
+                "https://*.ngrok-free.app",
+                "capacitor://localhost",
+                "ionic://localhost"
+        ));
+        // เมธอดที่อนุญาต
         cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        cfg.setAllowedHeaders(List.of("Authorization","Content-Type","Accept","Origin","X-Requested-With"));
+        // เฮดเดอร์ที่อนุญาต
+        cfg.setAllowedHeaders(List.of(
+                "Authorization","Content-Type","Accept","Origin","X-Requested-With",
+                "X-CSRF-TOKEN","Cache-Control","Pragma"
+        ));
+        // เฮดเดอร์ที่ client มองเห็นได้ (เช่น เอา filename จาก Content-Disposition)
+        cfg.setExposedHeaders(List.of(
+                "Authorization","Location","Link","Content-Disposition"
+        ));
+        // ให้ส่งคุกกี้/Authorization ได้
         cfg.setAllowCredentials(true);
+        // อายุ preflight cache (วินาที) – ลดจำนวน preflight ในเบราว์เซอร์
         cfg.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

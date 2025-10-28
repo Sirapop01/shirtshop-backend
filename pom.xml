@@ -6,7 +6,8 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.3.0</version>  <relativePath/>
+		<version>3.3.0</version>
+		<relativePath/>
 	</parent>
 
 	<groupId>com.shirtshop</groupId>
@@ -24,19 +25,25 @@
 
 	<dependencies>
 
+		<!-- Web (Servlet / MVC) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
+
+		<!-- Validation -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
+
+		<!-- MongoDB -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-mongodb</artifactId>
 		</dependency>
 
+		<!-- Security & OAuth2 login -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
@@ -45,6 +52,8 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-oauth2-client</artifactId>
 		</dependency>
+
+		<!-- JWT -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-api</artifactId>
@@ -63,12 +72,26 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		<!-- OpenAPI UI -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 			<version>${springdoc.version}</version>
 		</dependency>
 
+		<!-- Actuator (health check ฯลฯ) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+
+		<!-- WebClient (Reactive client) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webflux</artifactId>
+		</dependency>
+
+		<!-- Utils -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
@@ -85,13 +108,6 @@
 			<artifactId>cloudinary-http44</artifactId>
 			<version>1.39.0</version>
 		</dependency>
-
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-
 		<dependency>
 			<groupId>com.google.zxing</groupId>
 			<artifactId>core</artifactId>
@@ -103,8 +119,13 @@
 			<version>3.5.3</version>
 		</dependency>
 
+		<!-- Tests -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
-
 
 	<!-- กันเครือข่ายบางที่ที่มองไม่เห็น Central -->
 	<repositories>
@@ -123,6 +144,8 @@
 	</pluginRepositories>
 
 	<build>
+		<!-- ตั้งชื่อ JAR คงที่ ช่วยให้ COPY ใน Dockerfile ง่าย -->
+		<finalName>shirtshop-backend</finalName>
 		<plugins>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
@@ -135,7 +158,16 @@
 						</exclude>
 					</excludes>
 				</configuration>
+				<!-- ผูก repackage กับเฟส package เพื่อให้ได้ Bootable JAR อัตโนมัติ -->
+				<executions>
+					<execution>
+						<goals>
+							<goal>repackage</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
+
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
