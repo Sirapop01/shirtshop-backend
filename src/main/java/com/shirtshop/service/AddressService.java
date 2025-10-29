@@ -74,6 +74,9 @@ public class AddressService {
         existing.setProvince(req.getProvince());
         existing.setPostalCode(req.getPostalCode());
         existing.setDefault(req.isDefault());
+        existing.setDistrictName(req.getDistrictName());
+        existing.setProvinceName(req.getProvinceName());
+
 
         existing = addressRepository.save(existing);
 

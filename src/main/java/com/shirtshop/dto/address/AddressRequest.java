@@ -32,4 +32,7 @@ public class AddressRequest {
 
     @JsonProperty("isDefault")
     private boolean isDefault;
+
+    private String districtName;
+    private String provinceName;
 }
