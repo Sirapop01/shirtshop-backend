@@ -1,11 +1,18 @@
 package com.shirtshop.dto;
 
-import lombok.Builder;
-import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.*;
 
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class CloudinaryUploadResponse {
+    @JsonProperty("public_id")
     private String publicId;
-    private String url;
+
+    @JsonProperty("secure_url")
+    private String secureUrl;  // ✅ เพิ่ม
+
+    private String url;        // http (fallback)
 }

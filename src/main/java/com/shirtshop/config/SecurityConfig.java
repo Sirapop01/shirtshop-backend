@@ -42,6 +42,7 @@ public class SecurityConfig {
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
+                        .requestMatchers(HttpMethod.GET,  "/api/settings/branding").permitAll()
 
                         // ---------- Admin only ----------
                         .requestMatchers(HttpMethod.POST,   "/api/products").hasRole("ADMIN")
@@ -53,6 +54,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/orders/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET,   "/api/admin/orders/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/admin/orders/**").hasRole("ADMIN")
+
+                        // ✅ Branding settings (ครบทั้ง 3 method ที่ใช้ multipart)
+                        .requestMatchers(HttpMethod.POST,   "/api/settings/branding").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT,    "/api/settings/branding").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/settings/branding/**").hasRole("ADMIN")
 
                         // ---------- User protected ----------
                         .requestMatchers("/api/auth/me").authenticated()
