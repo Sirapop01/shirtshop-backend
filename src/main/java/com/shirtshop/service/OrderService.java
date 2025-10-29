@@ -11,7 +11,6 @@ import com.shirtshop.repository.CartRepository;
 import com.shirtshop.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -38,11 +37,8 @@ public class OrderService {
     private final AddressRepository addressRepo;
     private final InventoryService inventoryService;
 
-    @Value("${app.payment.promptpay.target}")
-    private String promptpayTarget;
-
-    @Value("${app.payment.promptpay.expire-minutes:1}")
-    private int expireMinutes;
+    // ⬇️ ใช้ค่าปัจจุบันจาก DB แทนการอ่านจาก application.yml
+    private final PaymentSettingsService paymentSettingsService;
 
     /* ===================== Common ===================== */
 
@@ -92,11 +88,7 @@ public class OrderService {
         for (Order order : expiredOrders) {
             order.setStatus(OrderStatus.EXPIRED);
             order.setUpdatedAt(Instant.now());
-
-            // หมายเหตุ: ตรรกะธุรกิจขึ้นกับระบบคุณ
-            // ที่คุณมีอยู่ก่อนหน้า: deduct stock once when slip uploaded
-            // กรณี EXPIRED ควรคืนสต๊อกหรือไม่? (แล้วแต่กติกา)
-            // ที่นี่ผมไม่ไปยุ่งเพิ่ม
+            // นโยบายคืนสต๊อกแล้วแต่ระบบของคุณ
         }
 
         orderRepo.saveAll(expiredOrders);
@@ -105,7 +97,7 @@ public class OrderService {
 
     /* =============== Create Order (PromptPay) =============== */
 
-    // REPLACE ทั้งเมธอดนี้
+    // ⬇️ ใช้ค่าจาก PaymentSettings (DB) และ snapshot ลง Order
     public CreateOrderResponse createPromptPayOrder(CreateOrderRequest req) {
         String userId = currentUserId();
 
@@ -121,24 +113,20 @@ public class OrderService {
         snap.setPhone(tryStr(address, "getPhone", "getTel", "getMobile"));
         snap.setLine1(tryStr(address, "getLine1", "getAddressLine1", "getAddress1", "getLineOne"));
         snap.setLine2(tryStr(address, "getLine2", "getAddressLine2", "getAddress2", "getLineTwo"));
-        // ตำบลส่วนใหญ่เป็นชื่ออยู่แล้ว แต่เพิ่มตัวเลือก name ไว้ก่อน
         snap.setSubDistrict(preferName(
                 tryStr(address, "getSubDistrictName", "getSubdistrictName", "getTambonName", "getSubDistrict", "getSubdistrict", "getTambon"),
                 tryStr(address, "getSubDistrictCode", "getSubdistrictCode")
         ));
-        // ✅ เลือก "ชื่ออำเภอ" ก่อน ถ้าไม่ได้ค่อย fallback เป็นรหัส
         snap.setDistrict(preferName(
                 tryStr(address, "getDistrictName", "getAmphurName", "getCityName", "getDistrictTh"),
                 tryStr(address, "getDistrict", "getAmphur", "getCity")
         ));
-        // ✅ เลือก "ชื่อจังหวัด" ก่อน ถ้าไม่ได้ค่อย fallback เป็นรหัส
         snap.setProvince(preferName(
                 tryStr(address, "getProvinceName", "getProvinceTh", "getStateName"),
                 tryStr(address, "getProvince", "getState")
         ));
         snap.setPostcode(tryStr(address, "getPostcode", "getZip", "getPostalCode"));
 
-        // owner ของ address (ใช้เป็นกุญแจสำรองตอนค้น cart)
         String addrUserId = tryStr(address, "getUserId", "getUserid", "getOwnerId");
 
         // ===== 2) หา Cart แบบ "ห้ามสร้างใหม่" =====
@@ -150,11 +138,10 @@ public class OrderService {
             throw new IllegalStateException("Cart is empty");
         }
 
-        // ===== 3) map cart -> order items (คงเดิม) =====
+        // ===== 3) map cart -> order items =====
         List<OrderItem> orderItems = cart.getItems().stream().map(ci -> {
             OrderItem it = new OrderItem();
             it.setProductId(ci.getProductId());
-            // ดึงชื่อแบบ fallback: name -> productName -> title
             String itemName = tryStr(ci, "getName", "getProductName", "getTitle");
             it.setName(itemName);
             it.setImageUrl(ci.getImageUrl());
@@ -169,7 +156,12 @@ public class OrderService {
         int shippingFee = 0; // ปรับตามลอจิกเดิมของคุณ
         int total = subTotal + shippingFee;
 
-        // ===== 4) build order (คงเดิม) =====
+        // ===== 4) โหลดค่าปัจจุบันจาก DB =====
+        var ps = paymentSettingsService.getOrInit(); // target + expireMinutes
+        String target = ps.getTarget();
+        int expireMinutes = ps.getExpireMinutes();
+
+        // ===== 5) build order & snapshot promptpay =====
         Instant now = Instant.now();
         Instant expiresAt = now.plus(expireMinutes, ChronoUnit.MINUTES);
 
@@ -182,20 +174,20 @@ public class OrderService {
         order.setPaymentMethod(PaymentMethod.PROMPTPAY);
         order.setStatus(OrderStatus.PENDING_PAYMENT);
 
-        order.setPromptpayTarget(promptpayTarget);
+        order.setPromptpayTarget(target);
         try {
-            String qrDataUrl = PromptPayQr.generatePromptPayQrDataUrl(promptpayTarget, total, 360, true);
+            String qrDataUrl = PromptPayQr.generatePromptPayQrDataUrl(target, total, 360, true);
             order.setPromptpayQrUrl(qrDataUrl);
         } catch (Exception e) {
             String amt = String.format(java.util.Locale.US, "%.2f", total * 1.0);
-            order.setPromptpayQrUrl("https://promptpay.io/" + promptpayTarget + ".png?amount=" + amt + "&size=360");
+            order.setPromptpayQrUrl("https://promptpay.io/" + target + ".png?amount=" + amt + "&size=360");
         }
 
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
         order.setExpiresAt(expiresAt);
 
-        // ===== 5) แนบ Address ใส่ Order =====
+        // ===== 6) แนบ Address ใส่ Order =====
         order.setAddressId(req.addressId());
         order.setShippingAddress(snap);
 
@@ -204,7 +196,7 @@ public class OrderService {
 
         order = orderRepo.save(order);
 
-        // ===== 6) เคลียร์ตะกร้า (คงเดิม) =====
+        // ===== 7) เคลียร์ตะกร้า =====
         cart.getItems().clear();
         cartRepo.save(cart);
 
@@ -216,7 +208,6 @@ public class OrderService {
                 order.getExpiresAt()
         );
     }
-
 
     /* =============== User actions =============== */
 
@@ -241,7 +232,7 @@ public class OrderService {
         order.setStatus(OrderStatus.SLIP_UPLOADED);
         order.setUpdatedAt(Instant.now());
 
-        // คุณมีตรรกะ: ตัดสต็อกตอน slip uploaded (ครั้งเดียว)
+        // ตัดสต๊อกตอน slip uploaded (ครั้งเดียว) ตามตรรกะเดิม
         inventoryService.deductOnSlipUploaded(order);
 
         order = orderRepo.save(order);
@@ -275,10 +266,8 @@ public class OrderService {
     public OrderListResponse adminList(String keyword,
                                        java.util.List<OrderStatus> statuses,
                                        org.springframework.data.domain.Pageable pageable) {
-        // ดึงจาก DB ตามเพจ (ถ้าไม่มีเมธอดเฉพาะใน repo ใช้ findAll ไปก่อน)
         var page = orderRepo.findAll(pageable);
 
-        // กรองในเมมโมรี่ (ง่ายและเร็วในการต่อ FE — ค่อย optimize ภายหลังได้)
         var filtered = page.getContent().stream()
                 .filter(o -> (statuses == null || statuses.isEmpty()) || statuses.contains(o.getStatus()))
                 .filter(o -> {
@@ -302,7 +291,6 @@ public class OrderService {
                 newPage.getTotalPages()
         );
     }
-
 
     /* =============== Restore cart from order =============== */
 
@@ -372,14 +360,12 @@ public class OrderService {
 
         switch (newStatus) {
             case PAID -> {
-                // อนุมัติได้ก็ต่อเมื่อเคยอัปสลิปแล้ว
                 if (order.getStatus() != OrderStatus.SLIP_UPLOADED) {
                     throw new IllegalArgumentException("Only SLIP_UPLOADED can be approved (to PAID)");
                 }
                 order.setStatus(OrderStatus.PAID);
-                order.setStatusNote(null); // ไม่ต้องมีเหตุผล
+                order.setStatusNote(null);
 
-                // สร้าง Tracking Tag ถ้ายังไม่มี
                 if (order.getTrackingTag() == null || order.getTrackingTag().isBlank()) {
                     order.setTrackingTag(generateTrackingTag(order));
                     order.setTrackingCreatedAt(Instant.now());
@@ -392,9 +378,9 @@ public class OrderService {
                 if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
                     throw new IllegalArgumentException("Order already closed");
                 }
-                inventoryService.restoreOnClosed(order); // คืนสต๊อก
+                inventoryService.restoreOnClosed(order);
                 order.setStatus(OrderStatus.REJECTED);
-                order.setStatusNote(safeNote(note));     // เก็บเหตุผลปฏิเสธ
+                order.setStatusNote(safeNote(note));
                 order.setUpdatedAt(Instant.now());
             }
 
@@ -402,9 +388,9 @@ public class OrderService {
                 if (order.getStatus() == OrderStatus.REJECTED || order.getStatus() == OrderStatus.CANCELED) {
                     throw new IllegalArgumentException("Order already closed");
                 }
-                inventoryService.restoreOnClosed(order); // คืนสต๊อก
+                inventoryService.restoreOnClosed(order);
                 order.setStatus(OrderStatus.CANCELED);
-                order.setStatusNote(safeNote(note));     // เก็บเหตุผลยกเลิก
+                order.setStatusNote(safeNote(note));
                 order.setUpdatedAt(Instant.now());
             }
 
@@ -417,7 +403,6 @@ public class OrderService {
 
     /* =============== Mapping =============== */
 
-    // REPLACE เมธอด map เป็นแบบนี้ (ชื่อเมธอดให้ใช้ชื่อเดิมของโปรเจ็กต์คุณ)
     private OrderResponse mapToOrderResponse(Order o) {
         List<Map<String, Object>> itemsPayload = o.getItems() == null ? List.of() :
                 o.getItems().stream().map(it -> {
@@ -432,7 +417,6 @@ public class OrderService {
                     return m;
                 }).toList();
 
-        // [ADD] address payload
         Map<String, Object> addrPayload = null;
         Order.ShippingAddress sa = o.getShippingAddress();
         if (sa != null) {
@@ -460,11 +444,8 @@ public class OrderService {
                 o.getPromptpayQrUrl(),
                 o.getExpiresAt(),
                 o.getPaymentSlipUrl(),
-
-                // [ADD] ส่งที่อยู่กลับ FE
                 o.getAddressId(),
                 addrPayload,
-
                 o.getTrackingTag(),
                 o.getTrackingCreatedAt(),
                 o.getStatusNote(),
@@ -472,7 +453,6 @@ public class OrderService {
                 o.getUpdatedAt()
         );
     }
-
 
     /* =============== Utils =============== */
 
@@ -488,7 +468,6 @@ public class OrderService {
         return 0;
     }
 
-    // ADD helper (ถ้ามีอยู่แล้วไม่ต้องเพิ่ม)
     private static String tryStr(Object target, String... methodNames) {
         if (target == null) return null;
         for (String name : methodNames) {
@@ -513,6 +492,4 @@ public class OrderService {
         if (code != null && !code.isBlank() && !isDigits(code)) return code;
         return (name != null && !name.isBlank()) ? name : code;
     }
-
-
 }
