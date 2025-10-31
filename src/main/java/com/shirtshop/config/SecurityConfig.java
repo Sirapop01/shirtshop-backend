@@ -43,6 +43,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
                         .requestMatchers(HttpMethod.GET,  "/api/settings/branding").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/auth/password/otp").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/auth/password/reset").permitAll()
 
                         // ---------- Admin only ----------
                         .requestMatchers(HttpMethod.POST,   "/api/products").hasRole("ADMIN")
@@ -67,6 +69,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/cart/**").authenticated()
                         .requestMatchers("/api/orders/**").authenticated()
                         .requestMatchers("/api/addresses/**").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/api/auth/password/change").authenticated()
 
                         // ML try-on เปิด public
                         .requestMatchers("/api/tryon").permitAll()

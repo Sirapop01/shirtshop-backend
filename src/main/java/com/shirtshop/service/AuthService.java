@@ -7,15 +7,29 @@ import com.shirtshop.dto.UserResponse;
 import com.shirtshop.entity.User;
 import com.shirtshop.exception.ApiException;
 import com.shirtshop.repository.UserRepository;
+import com.shirtshop.util.EmailSender;
+import com.shirtshop.util.OtpStore;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
+import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
+    private final OtpStore otpStore;
+
+    @Qualifier("smtpEmailSender")
+    private final EmailSender emailSender;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -120,5 +134,53 @@ public class AuthService {
                 .expiresIn(accessExpirationMs / 1000L)
                 .user(userService.toResponse(user))
                 .build();
+    }
+
+    /** ส่ง OTP: ตอบ 200 เสมอ เพื่อลด user-enumeration */
+    public void sendPasswordOtp(String email) {
+        Optional<User> maybe = userRepository.findByEmail(email);
+        if (maybe.isEmpty()) {
+            log.info("[sendPasswordOtp] email not found -> return 200 to avoid enumeration: {}", email);
+            // ไม่ทำอะไรต่อ แต่ตอบ 200 จาก Controller
+            return;
+        }
+
+        String otp = String.format("%06d", ThreadLocalRandom.current().nextInt(0, 1_000_000));
+        otpStore.save(email, otp, Duration.ofMinutes(10));
+
+        try {
+            emailSender.send(email, "Your ShirtShop OTP",
+                    "Your OTP is: " + otp + " (valid 10 minutes)");
+        } catch (Exception ex) {
+            // ป้องกัน 500 กรณีระบบอีเมลล่ม — เรา log และยังตอบ 200
+            log.error("[sendPasswordOtp] failed to send email to {}: {}", email, ex.getMessage(), ex);
+        }
+    }
+
+    public void resetPasswordWithOtp(String email, String otp, String newPassword) {
+        if (!otpStore.verify(email, otp)) {
+            throw new IllegalArgumentException("Invalid or expired OTP");
+        }
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Email not found"));
+
+        String encoded = passwordEncoder.encode(newPassword);
+        user.setPasswordHash(encoded); // ต้องมี field password + @Setter ใน User
+        userRepository.save(user);
+
+        otpStore.consume(email);
+    }
+    public void changePassword(String userId, String currentPassword, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException("User not found"));
+
+        // ตรวจรหัสเดิม
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+
+        // ตั้งรหัสใหม่ (เข้ารหัสก่อน)
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
     }
 }

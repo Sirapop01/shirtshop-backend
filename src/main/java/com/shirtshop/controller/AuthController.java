@@ -2,6 +2,7 @@ package com.shirtshop.controller;
 
 import com.shirtshop.dto.*;
 import com.shirtshop.entity.User;
+import com.shirtshop.repository.UserRepository;
 import com.shirtshop.service.AuthService;
 import com.shirtshop.service.UserService;
 import com.shirtshop.service.CloudinaryService;
@@ -9,6 +10,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,6 +26,8 @@ public class AuthController {
     private final UserService userService;
     private final AuthService authService;
     private final CloudinaryService cloudinaryService;
+    private final UserRepository userRepository;
+
     // --- เมธอดจาก UserController เดิม ---
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(
@@ -100,6 +104,37 @@ public class AuthController {
         User updatedUser = userService.updateUserProfile(userId, request);
 
         return ResponseEntity.ok(userService.toResponse(updatedUser));
+    }
+
+    @PostMapping("/password/otp")
+    public ResponseEntity<Map<String, Object>> sendPasswordOtp(@RequestBody OtpRequest req) {
+        authService.sendPasswordOtp(req.getEmail());
+        return ResponseEntity.ok(Map.of("message", "OTP sent"));
+    }
+
+    @PostMapping("/password/reset")
+    public ResponseEntity<Map<String, Object>> resetPassword(@RequestBody ResetPasswordRequest req) {
+        authService.resetPasswordWithOtp(req.getEmail(), req.getOtp(), req.getNewPassword());
+        return ResponseEntity.ok(Map.of("message", "Password reset success"));
+    }
+
+    @PutMapping("/password/change")
+    public ResponseEntity<Map<String, String>> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            Authentication authentication) {
+
+        if (authentication == null || authentication.getName() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Unauthenticated"));
+        }
+
+        // ดึง user ปัจจุบันจาก principal/email
+        String principalName = authentication.getName(); // ส่วนใหญ่คือ email
+        var user = userRepository.findByEmail(principalName)
+                .orElseThrow(() -> new IllegalStateException("User not found"));
+
+        authService.changePassword(user.getId(), request.getCurrentPassword(), request.getNewPassword());
+        return ResponseEntity.ok(Map.of("message", "Password changed"));
     }
 
 }
