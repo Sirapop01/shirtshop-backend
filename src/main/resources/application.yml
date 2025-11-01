@@ -22,7 +22,10 @@ spring:
       max-file-size: ${MAX_FILE_SIZE:10MB}
       max-request-size: ${MAX_REQUEST_SIZE:10MB}
 
-  # --- ส่งอีเมลจริงด้วย SMTP (โปรดตั้ง ENV เหล่านี้ใน prod) ---
+  # ---------------------------------------------
+  # SMTP: ใช้เฉพาะเมื่อเปิดโปรไฟล์ 'smtp' เท่านั้น
+  # (ใน Railway/production เราจะไม่ใช้ SMTP)
+  # ---------------------------------------------
   mail:
     host: ${SMTP_HOST:}
     port: ${SMTP_PORT:587}
@@ -43,9 +46,13 @@ springdoc:
     operationsSorter: method
     tagsSorter: alpha
 
+# -----------------------
+# คอนฟิกของแอป
+# -----------------------
 app:
   mail:
-    from: ${MAIL_FROM:noreply@yourdomain.com}
+    # ตัวส่งจริงจะอ่านค่าจากตรงนี้ ไม่ผูกกับ spring.mail
+    from: ${APP_MAIL_FROM:StyleWhere <onboarding@resend.dev>}
   jwt:
     access-secret: ${JWT_ACCESS_SECRET:DEMO_ACCESS_SECRET_MIN_32_BYTES________________________________}
     refresh-secret: ${JWT_REFRESH_SECRET:DEMO_REFRESH_SECRET_MIN_32_BYTES_______________________________}
@@ -53,7 +60,8 @@ app:
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRE_MS:604800000}
   security:
     cors:
-      allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+      # เพิ่มโดเมนของคุณที่ FE ใช้งานจริง (ใส่ , คั่นเพิ่มได้)
+      allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,https://shirtshop-frontend.vercel.app}
       allowed-methods: ${ALLOWED_METHODS:GET,POST,PUT,PATCH,DELETE,OPTIONS}
       allowed-headers: ${ALLOWED_HEADERS:Authorization,Content-Type,Accept,Origin,User-Agent,Cache-Control,Pragma}
       allow-credentials: ${ALLOW_CREDENTIALS:true}
@@ -71,7 +79,7 @@ app:
 ml:
   gradio:
     base-url: ${ML_BASE_URL:}
-    endpoint: ${ML_ENDPOINT:/api/tryon}     # ให้ใช้ path นี้ให้ตรงกับ ML จริง
+    endpoint: ${ML_ENDPOINT:/api/tryon}
     mode: ${ML_MODE:json}
     description: ${ML_DESCRIPTION:Short Sleeve Round Neck T-shirts}
     is-checked: ${ML_IS_CHECKED:true}
@@ -79,8 +87,21 @@ ml:
     denoise-steps: ${ML_DENOISE_STEPS:30}
     seed: ${ML_SEED:42}
 
-# ---------- โพรไฟล์ DEV (เลือกใช้เมื่อรันโลคัล) ----------
-# ใช้ Mailpit/MailHog เพื่อดูอีเมลในเบราว์เซอร์ ไม่ส่งออกจริง
+# -----------------------
+# Resend (HTTP API)
+# ใช้เมื่อเปิดโปรไฟล์ 'resend'
+# -----------------------
+resend:
+  apiKey: ${RESEND_API_KEY:}
+
+# (ตัวเลือก) map กลุ่มโปรไฟล์ ถ้าต้องการเปิด 'prod' แล้วให้ดึง 'resend' อัตโนมัติ
+# เปิดใช้ได้โดยตั้ง SPRING_PROFILES_ACTIVE=prod
+#spring:
+#  profiles:
+#    group:
+#      prod: resend
+
+# ---------- โปรไฟล์ DEV (mailpit) ----------
 ---
 spring:
   config:
@@ -98,8 +119,23 @@ spring:
           starttls:
             enable: false
 
-# เปิด CORS ให้โลคัลได้สะดวก
 app:
   security:
     cors:
       allowed-origins: ${ALLOWED_ORIGINS_DEV:http://localhost:3000,http://localhost:5173}
+
+# ---------- โปรไฟล์ SMTP (ใช้เฉพาะเมื่ออยากส่งผ่าน SMTP จริง) ----------
+---
+spring:
+  config:
+    activate:
+      on-profile: smtp
+# ใช้ค่าจาก spring.mail ด้านบนตามปกติ
+
+# ---------- โปรไฟล์ RESEND (ส่งเมลผ่าน Resend HTTP API) ----------
+---
+spring:
+  config:
+    activate:
+      on-profile: resend
+# ใช้ค่าจาก 'resend.apiKey' + 'app.mail.from'

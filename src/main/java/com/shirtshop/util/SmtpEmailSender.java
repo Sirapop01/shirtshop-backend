@@ -1,35 +1,32 @@
 package com.shirtshop.util;
 
-import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Primary;   // << สำคัญ
+import org.springframework.context.annotation.Profile;
 import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import jakarta.mail.Message;
+import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeMessage;
+
 @Service
-@Primary  // << ตัวหลักเวลามีหลาย bean ของ EmailSender
+@Profile("smtp") // ใช้เฉพาะเมื่อเปิดโปรไฟล์ smtp
 @RequiredArgsConstructor
 public class SmtpEmailSender implements EmailSender {
 
     private final JavaMailSender mailSender;
 
-    @Value("${app.mail.from:noreply@yourdomain.com}")
-    private String from;
-
     @Override
-    public void send(String to, String subject, String body) {
+    public void send(String to, String subject, String html) {
         try {
-            MimeMessage msg = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(msg, "UTF-8");
-            helper.setFrom(from);
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(body, false);
-            mailSender.send(msg);
+            MimeMessage message = mailSender.createMimeMessage();
+            message.setFrom(new InternetAddress("no-reply@example.com")); // หรือใช้ from จาก config ถ้าผูกไว้
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
+            message.setSubject(subject, "UTF-8");
+            message.setContent(html, "text/html; charset=UTF-8");
+            mailSender.send(message);
         } catch (Exception e) {
-            throw new RuntimeException("Send email failed: " + e.getMessage(), e);
+            throw new RuntimeException("Failed to send SMTP mail", e);
         }
     }
 }

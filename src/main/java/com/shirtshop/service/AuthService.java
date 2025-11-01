@@ -28,8 +28,8 @@ public class AuthService {
 
     private final OtpStore otpStore;
 
-    @Qualifier("smtpEmailSender")
     private final EmailSender emailSender;
+
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
