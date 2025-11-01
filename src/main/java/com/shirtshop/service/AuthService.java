@@ -3,7 +3,7 @@ package com.shirtshop.service;
 import com.shirtshop.dto.AuthResponse;
 import com.shirtshop.dto.LoginRequest;
 import com.shirtshop.dto.RegisterRequest;
-import com.shirtshop.dto.UserResponse;
+import com.shirtshop.dto.ChangePasswordRequest;
 import com.shirtshop.entity.User;
 import com.shirtshop.exception.ApiException;
 import com.shirtshop.repository.UserRepository;
@@ -170,17 +170,33 @@ public class AuthService {
 
         otpStore.consume(email);
     }
-    public void changePassword(String userId, String currentPassword, String newPassword) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalStateException("User not found"));
-
-        // ตรวจรหัสเดิม
-        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
-            throw new IllegalArgumentException("Current password is incorrect");
+    // ====== เปลี่ยนรหัสผ่านตอนล็อกอิน ======
+    public void changePasswordByPrincipal(String principalKey, ChangePasswordRequest req) {
+        if (!StringUtils.hasText(principalKey)) {
+            throw new ApiException("UNAUTHORIZED", "Unauthorized");
         }
 
-        // ตั้งรหัสใหม่ (เข้ารหัสก่อน)
-        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        // หา user: ลองตีความเป็น email ก่อน ถ้าไม่เจอค่อยลองเป็น id
+        var key = principalKey.trim();
+        var userOpt = userRepository.findByEmail(key.toLowerCase());
+        if (userOpt.isEmpty()) {
+            userOpt = userRepository.findById(key);
+        }
+        var user = userOpt.orElseThrow(() -> new ApiException("USER_NOT_FOUND", "User not found."));
+
+        String current = req.getCurrentPassword() == null ? "" : req.getCurrentPassword();
+        String next    = req.getNewPassword() == null ? "" : req.getNewPassword();
+
+        if (next.length() < 8) {
+            throw new ApiException("WEAK_PASSWORD", "Password must be at least 8 characters.");
+        }
+
+        String stored = user.getPasswordHash(); // ใช้ฟิลด์ตาม entity ของคุณ
+        if (!StringUtils.hasText(stored) || !passwordEncoder.matches(current, stored)) {
+            throw new ApiException("INVALID_CREDENTIALS", "Current password is incorrect.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(next));
         userRepository.save(user);
     }
 }

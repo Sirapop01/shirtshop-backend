@@ -118,23 +118,32 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "Password reset success"));
     }
 
-    @PutMapping("/password/change")
-    public ResponseEntity<Map<String, String>> changePassword(
-            @Valid @RequestBody ChangePasswordRequest request,
-            Authentication authentication) {
+    // ====== เปลี่ยนรหัสผ่าน (ต้องล็อกอิน) ======
+    @PostMapping("/password/change")
+    public ResponseEntity<?> changePasswordPost(@Valid @RequestBody ChangePasswordRequest req) {
+        return changePasswordInternal(req);
+    }
 
-        if (authentication == null || authentication.getName() == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "Unauthenticated"));
+    // เผื่อฝั่ง FE บางหน้าส่งเป็น PUT — รองรับไว้ด้วย
+    @PutMapping("/password/change")
+    public ResponseEntity<?> changePasswordPut(@Valid @RequestBody ChangePasswordRequest req) {
+        return changePasswordInternal(req);
+    }
+
+    private ResponseEntity<?> changePasswordInternal(ChangePasswordRequest req) {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+
+        // principal อาจเป็น User ของเรา หรือเป็น UserDetails/String ก็ได้
+        String principalKey;
+        Object principal = auth.getPrincipal();
+        if (principal instanceof User u) {
+            principalKey = (u.getEmail() != null && !u.getEmail().isBlank()) ? u.getEmail() : u.getId();
+        } else {
+            principalKey = auth.getName(); // บางระบบ map เป็น userId/username/email
         }
 
-        // ดึง user ปัจจุบันจาก principal/email
-        String principalName = authentication.getName(); // ส่วนใหญ่คือ email
-        var user = userRepository.findByEmail(principalName)
-                .orElseThrow(() -> new IllegalStateException("User not found"));
-
-        authService.changePassword(user.getId(), request.getCurrentPassword(), request.getNewPassword());
-        return ResponseEntity.ok(Map.of("message", "Password changed"));
+        authService.changePasswordByPrincipal(principalKey, req);
+        return ResponseEntity.ok().build();
     }
 
 }
