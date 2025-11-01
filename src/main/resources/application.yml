@@ -87,6 +87,11 @@ ml:
     denoise-steps: ${ML_DENOISE_STEPS:30}
     seed: ${ML_SEED:42}
 
+logging:
+  level:
+    com.shirtshop.util.ResendEmailSender: INFO
+    org.springframework.web.client.RestClient: INFO
+
 # -----------------------
 # Resend (HTTP API)
 # ใช้เมื่อเปิดโปรไฟล์ 'resend'
