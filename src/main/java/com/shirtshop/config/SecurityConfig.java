@@ -45,7 +45,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,  "/api/settings/branding").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/auth/password/otp").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/auth/password/reset").permitAll()
-
+                        .requestMatchers("/api/_debug/email-sender").permitAll()
                         // ---------- Admin only ----------
                         .requestMatchers(HttpMethod.POST,   "/api/products").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,    "/api/products/**").hasRole("ADMIN")
