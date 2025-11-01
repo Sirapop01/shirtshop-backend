@@ -32,24 +32,17 @@ public class ResendEmailSender implements EmailSender {
 
     @Override
     public void send(String to, String subject, String html) {
-        var body = Map.of(
-                "from", from,
-                "to", new String[]{to},
-                "subject", subject,
-                "html", html
-        );
-        log.info("Sending email via Resend → to='{}' subject='{}'", to, subject);
-        try {
-            client.post()
-                    .uri("/emails")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .toBodilessEntity();
-            log.info("Resend API call: OK (2xx)");
-        } catch (Exception e) {
-            log.error("Resend API call FAILED", e);
-            throw e; // ให้เห็น error ชัด ถ้าอยากไม่ล้มค่อยจับที่ service ชั้นบน
-        }
+        var body = new java.util.HashMap<String, Object>();
+        body.put("from", from);                    // "StyleWhere <onboarding@resend.dev>"
+        body.put("to", new String[]{to});
+        body.put("subject", subject);
+        body.put("html", html);
+        body.put("reply_to", System.getenv().getOrDefault("APP_MAIL_REPLY_TO", "stylewhere68@gmail.com"));
+        client.post()
+                .uri("/emails")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
     }
 }
